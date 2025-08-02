@@ -1,0 +1,178 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "canza-integrations"
+version = "0.1.0"
+description = "Payment system integrations for Canza Platform"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Canza Team", email = "team@canza.com"}
+]
+keywords = ["payments", "mobile-money", "blockchain", "banking", "integrations"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.9"
+
+# Integration package dependencies
+dependencies = [
+    # Core Framework
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    
+    # HTTP Client
+    "aiohttp>=3.9.0",
+    "httpx>=0.25.0",
+    "requests>=2.31.0",
+    
+    # Database
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.29.0",
+    "redis>=5.0.0",
+    
+    # Security & Authentication
+    "cryptography>=45.0.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.0",
+    
+    # Multi-currency Support
+    "forex-python>=1.8",
+    "python-money>=0.5",
+    
+    # Geographic & Currency Data
+    "pycountry>=23.12.0",
+    "geopy>=2.4.0",
+    
+    # Logging & Monitoring
+    "structlog>=23.2.0",
+    "prometheus-client>=0.19.0",
+    
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "click>=8.1.0",
+    "rich>=13.7.0",
+    
+    # Blockchain (optional)
+    "web3>=6.0.0",
+    "eth-account>=0.9.0",
+    
+    # Mobile Money APIs
+    "requests-oauthlib>=1.3.0",
+    "pyjwt>=2.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    "black>=23.11.0",
+    "isort>=5.12.0",
+    "flake8>=6.1.0",
+    "mypy>=1.0.0",
+]
+
+test = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    "responses>=0.23.0",
+    "vcrpy>=6.0.0",
+]
+
+# Optional blockchain integrations
+blockchain = [
+    "web3>=6.0.0",
+    "eth-account>=0.9.0",
+    "eth-typing>=3.0.0",
+    "eth-utils>=2.0.0",
+]
+
+# Optional mobile money integrations
+mobile-money = [
+    "requests-oauthlib>=1.3.0",
+    "pyjwt>=2.8.0",
+    "twilio>=8.0.0",
+]
+
+# Optional banking integrations
+banking = [
+    "zeep>=4.2.0",
+    "xmltodict>=0.13.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/canza/canza-platform"
+Documentation = "https://docs.canza.com"
+Repository = "https://github.com/canza/canza-platform"
+"Bug Tracker" = "https://github.com/canza/canza-platform/issues"
+
+[project.scripts]
+canza-mpesa = "packages.integrations.mobile_money.mpesa:main"
+canza-aptos = "packages.integrations.blockchain.aptos:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["packages/integrations"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/packages/integrations",
+]
+
+# Black configuration
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+
+# isort configuration
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["packages.integrations"]
+
+# mypy configuration
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+# pytest configuration
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "external: marks tests that require external services",
+] 
