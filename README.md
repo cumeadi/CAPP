@@ -70,7 +70,9 @@ Our Nigeria → Kenya payment demonstration shows:
 
 ### Backend
 - **FastAPI**: High-performance async web framework
-- **SQLAlchemy**: Async database ORM
+- **SQLAlchemy**: Async database ORM with PostgreSQL
+- **Alembic**: Database migration management
+- **PostgreSQL**: Primary data store
 - **Redis**: Caching and rate limiting
 - **Apache Kafka**: Event streaming (mocked)
 - **Aptos SDK**: Blockchain integration (mocked)
@@ -133,9 +135,11 @@ canza-platform/
 
 ### Prerequisites
 - Python 3.8+
+- PostgreSQL 13+
 - Node.js 16+
 - npm or yarn
 - Git
+- Redis (optional, for caching and rate limiting)
 
 ### Backend Setup
 ```bash
@@ -149,6 +153,13 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r applications/capp/requirements.txt
+
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your database credentials
+
+# Run database migrations
+alembic upgrade head
 
 # Run backend
 python -m uvicorn applications.capp.capp.main:app --reload
@@ -174,6 +185,32 @@ python -m applications.capp.capp.scripts.demo_payment_flow
 # Run basic functionality tests
 python tests/test_capp.py
 ```
+
+### Database Migrations
+
+CAPP uses Alembic for database schema management:
+
+```bash
+# Check current migration status
+alembic current
+
+# Create a new migration
+./scripts/create_migration.sh "description of changes"
+
+# Apply all pending migrations
+alembic upgrade head
+
+# Rollback one migration
+alembic downgrade -1
+
+# View migration history
+alembic history
+
+# Test migrations (upgrade, downgrade, re-upgrade)
+./scripts/test_migration.sh
+```
+
+For detailed migration documentation, see [docs/MIGRATIONS.md](docs/MIGRATIONS.md).
 
 ## 🌐 API Endpoints
 
@@ -309,8 +346,24 @@ For support and questions:
 
 ## 🎯 Roadmap
 
+### Phase 1: Security Hardening ✅
+- [x] CORS configuration
+- [x] JWT authentication
+- [x] Rate limiting
+- [x] Input validation
+- [x] Security headers
+- [x] Secrets management
+
+### Phase 2: Core Implementation (In Progress)
+- [x] Database layer implementation with PostgreSQL
+- [x] Alembic migrations setup
+- [x] User authentication repository
+- [x] Payment repository
+- [ ] Payment service database integration
+- [ ] Error handling framework
+- [ ] Health check system
+
 ### Phase 3: Production Readiness
-- [ ] Database layer implementation
 - [ ] MMO integration framework
 - [ ] Analytics service
 - [ ] Production deployment
