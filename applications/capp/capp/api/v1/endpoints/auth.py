@@ -2,16 +2,18 @@
 Authentication endpoints for CAPP API
 
 This module provides authentication endpoints including login, registration,
-token refresh, and password management.
+token refresh, and password management with database integration.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any
-from uuid import uuid4
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from ....config.settings import get_settings
 from ....core.auth import (
@@ -23,6 +25,8 @@ from ....core.auth import (
     TokenExpiredError,
 )
 from ....core.rate_limit import limiter
+from ....core.database import get_db
+from ....repositories.user import UserRepository
 from ....models.user import (
     User,
     UserCreate,
@@ -31,9 +35,8 @@ from ....models.user import (
     RefreshTokenRequest,
     PasswordChangeRequest,
     PasswordResetRequest,
-    UserInDB,
-    UserStatus,
     UserRole,
+    UserStatus,
 )
 from ....api.dependencies.auth import get_current_active_user
 
@@ -43,13 +46,14 @@ security = HTTPBearer()
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# Mock user database (replace with actual database)
-MOCK_USERS_DB: Dict[str, UserInDB] = {}
-
 
 @router.post("/register", response_model=User, status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/minute")
-async def register(request: Request, user_data: UserCreate) -> User:
+async def register(
+    request: Request,
+    user_data: UserCreate,
+    db: AsyncSession = Depends(get_db)
+) -> User:
     """
     Register a new user
 
@@ -58,68 +62,74 @@ async def register(request: Request, user_data: UserCreate) -> User:
     Args:
         request: FastAPI request object
         user_data: User registration data
+        db: Database session
 
     Returns:
         Created user object
 
     Raises:
-        HTTPException: If email already exists
+        HTTPException: If email already exists or validation fails
     """
     try:
-        # Check if user already exists
-        existing_user = next(
-            (u for u in MOCK_USERS_DB.values() if u.email == user_data.email),
-            None
-        )
+        repo = UserRepository(db)
 
+        # Check if user already exists
+        existing_user = await repo.get_by_email(user_data.email)
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Email already registered"
             )
 
-        # Create new user
-        user_id = uuid4()
+        # Check phone number if provided
+        if user_data.phone_number:
+            existing_phone = await repo.get_by_phone(user_data.phone_number)
+            if existing_phone:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Phone number already registered"
+                )
+
+        # Hash password
         hashed_password = hash_password(user_data.password)
 
-        user_in_db = UserInDB(
-            id=user_id,
+        # Create user in database
+        user_model = await repo.create(
             email=user_data.email,
+            hashed_password=hashed_password,
             full_name=user_data.full_name,
             phone_number=user_data.phone_number,
-            role=user_data.role,
-            is_active=user_data.is_active,
-            hashed_password=hashed_password,
-            status=UserStatus.ACTIVE,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            role=user_data.role
         )
-
-        # Store user (mock - replace with database)
-        MOCK_USERS_DB[str(user_id)] = user_in_db
 
         logger.info(
             "User registered successfully",
-            user_id=str(user_id),
+            user_id=str(user_model.id),
             email=user_data.email
         )
 
         # Return user without sensitive data
         return User(
-            id=user_in_db.id,
-            email=user_in_db.email,
-            full_name=user_in_db.full_name,
-            phone_number=user_in_db.phone_number,
-            role=user_in_db.role,
-            is_active=user_in_db.is_active,
-            status=user_in_db.status,
-            created_at=user_in_db.created_at,
-            updated_at=user_in_db.updated_at,
-            last_login=user_in_db.last_login,
+            id=user_model.id,
+            email=user_model.email,
+            full_name=user_model.full_name,
+            phone_number=user_model.phone_number,
+            role=UserRole(user_model.role),
+            is_active=user_model.is_active,
+            status=UserStatus(user_model.status),
+            created_at=user_model.created_at,
+            updated_at=user_model.updated_at,
+            last_login=user_model.last_login,
         )
 
     except HTTPException:
         raise
+    except IntegrityError as e:
+        logger.error("Database integrity error during registration", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User with this email or phone already exists"
+        )
     except Exception as e:
         logger.error("Registration failed", error=str(e))
         raise HTTPException(
@@ -130,7 +140,11 @@ async def register(request: Request, user_data: UserCreate) -> User:
 
 @router.post("/login", response_model=Token)
 @limiter.limit("10/minute")
-async def login(request: Request, login_data: LoginRequest) -> Token:
+async def login(
+    request: Request,
+    login_data: LoginRequest,
+    db: AsyncSession = Depends(get_db)
+) -> Token:
     """
     Authenticate user and return JWT tokens
 
@@ -139,6 +153,7 @@ async def login(request: Request, login_data: LoginRequest) -> Token:
     Args:
         request: FastAPI request object
         login_data: Login credentials
+        db: Database session
 
     Returns:
         JWT access and refresh tokens
@@ -147,11 +162,10 @@ async def login(request: Request, login_data: LoginRequest) -> Token:
         HTTPException: If credentials are invalid
     """
     try:
+        repo = UserRepository(db)
+
         # Find user by email
-        user = next(
-            (u for u in MOCK_USERS_DB.values() if u.email == login_data.email),
-            None
-        )
+        user = await repo.get_by_email(login_data.email)
 
         if not user:
             logger.warning(
@@ -173,15 +187,7 @@ async def login(request: Request, login_data: LoginRequest) -> Token:
             )
 
             # Increment failed login attempts
-            user.failed_login_attempts += 1
-
-            # Lock account after 5 failed attempts
-            if user.failed_login_attempts >= 5:
-                user.status = UserStatus.SUSPENDED
-                logger.warning(
-                    "User account suspended due to failed login attempts",
-                    user_id=str(user.id)
-                )
+            await repo.increment_failed_login(user.id)
 
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -190,18 +196,21 @@ async def login(request: Request, login_data: LoginRequest) -> Token:
             )
 
         # Check if user is active
-        if user.status != UserStatus.ACTIVE:
+        if user.status != UserStatus.ACTIVE.value:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Account is {user.status.value}"
+                detail=f"Account is {user.status}"
             )
 
-        # Reset failed login attempts
-        user.failed_login_attempts = 0
-        user.last_login = datetime.utcnow()
+        # Update last login
+        await repo.update_last_login(user.id)
 
         # Generate tokens
-        tokens = create_token_pair(user.id, user.email, user.role)
+        tokens = create_token_pair(
+            user.id,
+            user.email,
+            UserRole(user.role)
+        )
 
         logger.info(
             "User logged in successfully",
@@ -227,14 +236,19 @@ async def login(request: Request, login_data: LoginRequest) -> Token:
 
 
 @router.post("/refresh", response_model=Token)
+@limiter.limit("20/minute")
 async def refresh_token(
-    refresh_data: RefreshTokenRequest
+    request: Request,
+    refresh_data: RefreshTokenRequest,
+    db: AsyncSession = Depends(get_db)
 ) -> Token:
     """
     Refresh access token using refresh token
 
     Args:
+        request: FastAPI request object
         refresh_data: Refresh token
+        db: Database session
 
     Returns:
         New JWT access token
@@ -246,8 +260,10 @@ async def refresh_token(
         # Verify refresh token
         token_data = verify_token(refresh_data.refresh_token, token_type="refresh")
 
+        repo = UserRepository(db)
+
         # Verify user still exists and is active
-        user = MOCK_USERS_DB.get(str(token_data.user_id))
+        user = await repo.get_by_id(token_data.user_id)
 
         if not user:
             raise HTTPException(
@@ -255,14 +271,18 @@ async def refresh_token(
                 detail="User not found"
             )
 
-        if user.status != UserStatus.ACTIVE:
+        if user.status != UserStatus.ACTIVE.value:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Account is {user.status.value}"
+                detail=f"Account is {user.status}"
             )
 
         # Generate new tokens
-        tokens = create_token_pair(user.id, user.email, user.role)
+        tokens = create_token_pair(
+            user.id,
+            user.email,
+            UserRole(user.role)
+        )
 
         logger.info(
             "Token refreshed successfully",
@@ -318,16 +338,21 @@ async def logout(
 
 
 @router.post("/change-password")
+@limiter.limit("5/hour")
 async def change_password(
+    request: Request,
     password_data: PasswordChangeRequest,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
 ) -> Dict[str, str]:
     """
     Change user password
 
     Args:
+        request: FastAPI request object
         password_data: Old and new password
         current_user: Current authenticated user
+        db: Database session
 
     Returns:
         Success message
@@ -336,8 +361,10 @@ async def change_password(
         HTTPException: If old password is incorrect
     """
     try:
+        repo = UserRepository(db)
+
         # Get user from database
-        user = MOCK_USERS_DB.get(str(current_user.id))
+        user = await repo.get_by_id(current_user.id)
 
         if not user:
             raise HTTPException(
@@ -353,8 +380,8 @@ async def change_password(
             )
 
         # Hash and update password
-        user.hashed_password = hash_password(password_data.new_password)
-        user.updated_at = datetime.utcnow()
+        new_hashed_password = hash_password(password_data.new_password)
+        await repo.update_password(user.id, new_hashed_password)
 
         logger.info(
             "Password changed successfully",
@@ -406,19 +433,12 @@ async def request_password_reset(
         This is a mock implementation. In production, this would send
         an email with a password reset token.
     """
-    # Find user by email
-    user = next(
-        (u for u in MOCK_USERS_DB.values() if u.email == reset_data.email),
-        None
+    logger.info(
+        "Password reset requested",
+        email=reset_data.email
     )
 
     # Always return success to prevent email enumeration
-    logger.info(
-        "Password reset requested",
-        email=reset_data.email,
-        user_found=user is not None
-    )
-
     return {
         "message": "If the email exists, a password reset link has been sent"
     }

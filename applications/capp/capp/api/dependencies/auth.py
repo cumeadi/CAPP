@@ -2,28 +2,27 @@
 Authentication dependencies for FastAPI routes
 
 This module provides dependency functions for authenticating and authorizing
-users in FastAPI endpoints.
+users in FastAPI endpoints with database integration.
 """
 
-from typing import Optional, List
+from typing import Optional
 from uuid import UUID
+from datetime import datetime
 
 import structlog
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.auth import verify_token, InvalidTokenError, TokenExpiredError
-from ...models.user import User, UserRole, TokenData, UserStatus
+from ...core.database import get_db
+from ...repositories.user import UserRepository
+from ...models.user import User, UserRole, UserStatus, TokenData
 
 logger = structlog.get_logger(__name__)
 
 # HTTP Bearer token security scheme
 security = HTTPBearer(auto_error=False)
-
-
-# In-memory user store (temporary - replace with database)
-# This is a mock implementation until the database layer is ready
-MOCK_USERS_DB = {}
 
 
 async def get_current_user_from_token(
@@ -69,13 +68,15 @@ async def get_current_user_from_token(
 
 
 async def get_current_user(
-    token_data: TokenData = Depends(get_current_user_from_token)
+    token_data: TokenData = Depends(get_current_user_from_token),
+    db: AsyncSession = Depends(get_db)
 ) -> User:
     """
-    Get current authenticated user
+    Get current authenticated user from database
 
     Args:
         token_data: Token data from JWT
+        db: Database session
 
     Returns:
         User object
@@ -83,26 +84,30 @@ async def get_current_user(
     Raises:
         HTTPException: If user not found or inactive
     """
-    # Mock user lookup - replace with database query
-    # For now, create a user object from token data
-    user = User(
-        id=token_data.user_id,
-        email=token_data.email,
-        full_name=f"User {token_data.email}",
-        role=token_data.role,
-        is_active=True,
-        status=UserStatus.ACTIVE,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
+    repo = UserRepository(db)
 
-    # TODO: Replace with actual database lookup
-    # user = await user_service.get_user_by_id(token_data.user_id)
-    # if user is None:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_404_NOT_FOUND,
-    #         detail="User not found"
-    #     )
+    # Get user from database
+    user_model = await repo.get_by_id(token_data.user_id)
+
+    if user_model is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Convert database model to Pydantic model
+    user = User(
+        id=user_model.id,
+        email=user_model.email,
+        full_name=user_model.full_name,
+        phone_number=user_model.phone_number,
+        role=UserRole(user_model.role),
+        is_active=user_model.is_active,
+        status=UserStatus(user_model.status),
+        created_at=user_model.created_at,
+        updated_at=user_model.updated_at,
+        last_login=user_model.last_login,
+    )
 
     return user
 
@@ -132,7 +137,8 @@ async def get_current_active_user(
 
 
 async def get_optional_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: AsyncSession = Depends(get_db)
 ) -> Optional[User]:
     """
     Get current user if authenticated, otherwise None
@@ -141,6 +147,7 @@ async def get_optional_user(
 
     Args:
         credentials: HTTP Bearer credentials
+        db: Database session
 
     Returns:
         User object if authenticated, None otherwise
@@ -151,16 +158,24 @@ async def get_optional_user(
     try:
         token_data = verify_token(credentials.credentials, token_type="access")
 
-        # Mock user creation - replace with database lookup
+        repo = UserRepository(db)
+        user_model = await repo.get_by_id(token_data.user_id)
+
+        if user_model is None:
+            return None
+
+        # Convert to Pydantic model
         user = User(
-            id=token_data.user_id,
-            email=token_data.email,
-            full_name=f"User {token_data.email}",
-            role=token_data.role,
-            is_active=True,
-            status=UserStatus.ACTIVE,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            id=user_model.id,
+            email=user_model.email,
+            full_name=user_model.full_name,
+            phone_number=user_model.phone_number,
+            role=UserRole(user_model.role),
+            is_active=user_model.is_active,
+            status=UserStatus(user_model.status),
+            created_at=user_model.created_at,
+            updated_at=user_model.updated_at,
+            last_login=user_model.last_login,
         )
 
         return user
@@ -232,7 +247,3 @@ async def require_admin(
         )
 
     return current_user
-
-
-# Import datetime for mock user creation
-from datetime import datetime
