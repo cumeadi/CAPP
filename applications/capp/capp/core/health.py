@@ -1,344 +1,318 @@
 """
-Health Check Router for CAPP
+Health Check System for CAPP
 
-Provides health check endpoints for monitoring system status,
-service availability, and performance metrics.
+Provides deep health checks for all critical services including database,
+Redis, and system status.
 """
 
-from typing import Dict, Any
-from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
-import structlog
+from datetime import datetime, timezone
+from typing import Dict, Any, Optional
+from enum import Enum
+import asyncio
 
-from .core.database import get_database_session
-from .core.redis import get_redis_client
-from .core.kafka import get_kafka_producer
-from .core.aptos import get_aptos_client
-from .config.settings import get_settings
+import structlog
+from sqlalchemy import text
+from pydantic import BaseModel
+
+from .database import get_database_session
+from .redis import get_cache
+from ..config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
-health_check_router = APIRouter()
+
+class HealthStatus(str, Enum):
+    """Health status enumeration"""
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNHEALTHY = "unhealthy"
 
 
-@health_check_router.get("/")
-async def health_check() -> Dict[str, Any]:
+class ServiceHealth(BaseModel):
+    """Health information for a single service"""
+    name: str
+    status: HealthStatus
+    message: str
+    response_time_ms: Optional[float] = None
+    details: Dict[str, Any] = {}
+    checked_at: datetime
+
+
+class SystemHealth(BaseModel):
+    """Overall system health information"""
+    status: HealthStatus
+    version: str
+    uptime_seconds: Optional[float] = None
+    services: Dict[str, ServiceHealth]
+    checked_at: datetime
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+class HealthChecker:
     """
-    Basic health check endpoint
-    
+    Health checker for CAPP services.
+
+    Performs deep health checks on all critical services and dependencies.
+    """
+
+    def __init__(self):
+        self.settings = get_settings()
+        self.logger = structlog.get_logger(__name__)
+        self.startup_time = datetime.now(timezone.utc)
+
+    async def check_database(self) -> ServiceHealth:
+        """
+        Check database health.
+
+        Returns:
+            ServiceHealth: Database health status
+        """
+        start_time = asyncio.get_event_loop().time()
+        checked_at = datetime.now(timezone.utc)
+
+        try:
+            async with get_database_session() as session:
+                # Execute simple query to check connectivity
+                result = await session.execute(text("SELECT 1"))
+                result.scalar()
+
+                # Check if we can connect to the database
+                response_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+
+                return ServiceHealth(
+                    name="database",
+                    status=HealthStatus.HEALTHY,
+                    message="Database connection is healthy",
+                    response_time_ms=round(response_time_ms, 2),
+                    details={
+                        "database_url": self._mask_connection_string(self.settings.DATABASE_URL)
+                    },
+                    checked_at=checked_at
+                )
+
+        except Exception as e:
+            response_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+
+            self.logger.error("Database health check failed", error=str(e))
+
+            return ServiceHealth(
+                name="database",
+                status=HealthStatus.UNHEALTHY,
+                message=f"Database connection failed: {str(e)}",
+                response_time_ms=round(response_time_ms, 2),
+                details={"error": str(e)},
+                checked_at=checked_at
+            )
+
+    async def check_redis(self) -> ServiceHealth:
+        """
+        Check Redis health.
+
+        Returns:
+            ServiceHealth: Redis health status
+        """
+        start_time = asyncio.get_event_loop().time()
+        checked_at = datetime.now(timezone.utc)
+
+        try:
+            cache = get_cache()
+
+            # Perform a simple ping to check connectivity
+            await cache.ping()
+
+            response_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+
+            # Get Redis info if available
+            info = await cache.info("server")
+            redis_version = info.get("redis_version", "unknown")
+
+            return ServiceHealth(
+                name="redis",
+                status=HealthStatus.HEALTHY,
+                message="Redis connection is healthy",
+                response_time_ms=round(response_time_ms, 2),
+                details={
+                    "redis_url": self._mask_connection_string(self.settings.REDIS_URL),
+                    "redis_version": redis_version
+                },
+                checked_at=checked_at
+            )
+
+        except Exception as e:
+            response_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+
+            self.logger.error("Redis health check failed", error=str(e))
+
+            return ServiceHealth(
+                name="redis",
+                status=HealthStatus.DEGRADED,  # Redis is not critical, so degraded not unhealthy
+                message=f"Redis connection failed: {str(e)}",
+                response_time_ms=round(response_time_ms, 2),
+                details={"error": str(e)},
+                checked_at=checked_at
+            )
+
+    async def check_all_services(self) -> SystemHealth:
+        """
+        Check health of all services.
+
+        Returns:
+            SystemHealth: Overall system health
+        """
+        checked_at = datetime.now(timezone.utc)
+
+        # Run all health checks concurrently
+        health_checks = await asyncio.gather(
+            self.check_database(),
+            self.check_redis(),
+            return_exceptions=True
+        )
+
+        # Process results
+        services = {}
+        for health in health_checks:
+            if isinstance(health, ServiceHealth):
+                services[health.name] = health
+            elif isinstance(health, Exception):
+                # Handle unexpected exceptions from health checks
+                self.logger.error("Health check raised unexpected exception", error=str(health))
+                services["unknown"] = ServiceHealth(
+                    name="unknown",
+                    status=HealthStatus.UNHEALTHY,
+                    message=f"Health check failed: {str(health)}",
+                    checked_at=checked_at
+                )
+
+        # Determine overall system health
+        overall_status = self._determine_overall_status(services)
+
+        # Calculate uptime
+        uptime_seconds = (checked_at - self.startup_time).total_seconds()
+
+        return SystemHealth(
+            status=overall_status,
+            version="1.0.0",
+            uptime_seconds=round(uptime_seconds, 2),
+            services=services,
+            checked_at=checked_at
+        )
+
+    async def check_readiness(self) -> bool:
+        """
+        Check if the system is ready to accept traffic.
+
+        Returns:
+            bool: True if ready, False otherwise
+        """
+        health = await self.check_all_services()
+        # System is ready if not unhealthy (degraded is still acceptable)
+        return health.status != HealthStatus.UNHEALTHY
+
+    async def check_liveness(self) -> bool:
+        """
+        Check if the system is alive (basic liveness check).
+
+        Returns:
+            bool: True if alive, False otherwise
+        """
+        # Liveness check is simpler - just check if we can respond
+        return True
+
+    def _determine_overall_status(self, services: Dict[str, ServiceHealth]) -> HealthStatus:
+        """
+        Determine overall system health based on individual service health.
+
+        Args:
+            services: Dictionary of service health statuses
+
+        Returns:
+            HealthStatus: Overall system health
+        """
+        if not services:
+            return HealthStatus.UNHEALTHY
+
+        # Count statuses
+        unhealthy_count = sum(1 for s in services.values() if s.status == HealthStatus.UNHEALTHY)
+        degraded_count = sum(1 for s in services.values() if s.status == HealthStatus.DEGRADED)
+
+        # If any critical service is unhealthy, system is unhealthy
+        # Database is critical, Redis is not
+        critical_services = ["database"]
+        critical_unhealthy = any(
+            services[s].status == HealthStatus.UNHEALTHY
+            for s in critical_services
+            if s in services
+        )
+
+        if critical_unhealthy:
+            return HealthStatus.UNHEALTHY
+
+        # If any service is degraded or unhealthy, system is degraded
+        if degraded_count > 0 or unhealthy_count > 0:
+            return HealthStatus.DEGRADED
+
+        # All services are healthy
+        return HealthStatus.HEALTHY
+
+    def _mask_connection_string(self, connection_string: str) -> str:
+        """
+        Mask sensitive information in connection strings.
+
+        Args:
+            connection_string: The connection string to mask
+
+        Returns:
+            str: Masked connection string
+        """
+        import re
+
+        # Mask password in connection strings
+        # Matches patterns like: user:password@host
+        masked = re.sub(r'://([^:]+):([^@]+)@', r'://\1:***@', connection_string)
+        return masked
+
+
+# Global health checker instance
+health_checker = HealthChecker()
+
+
+async def get_health() -> SystemHealth:
+    """
+    Get current system health.
+
     Returns:
-        Dict containing basic health status
+        SystemHealth: Current system health information
     """
+    return await health_checker.check_all_services()
+
+
+async def get_readiness() -> Dict[str, Any]:
+    """
+    Get readiness status.
+
+    Returns:
+        Dict: Readiness information
+    """
+    ready = await health_checker.check_readiness()
     return {
-        "status": "healthy",
-        "service": "CAPP",
-        "version": get_settings().APP_VERSION,
-        "environment": get_settings().ENVIRONMENT
+        "ready": ready,
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
-@health_check_router.get("/ready")
-async def readiness_check() -> Dict[str, Any]:
+async def get_liveness() -> Dict[str, Any]:
     """
-    Readiness check endpoint
-    
-    Checks if the service is ready to handle requests by verifying
-    all critical dependencies are available.
-    
-    Returns:
-        Dict containing readiness status and dependency health
-    """
-    health_status = {
-        "status": "ready",
-        "service": "CAPP",
-        "dependencies": {}
-    }
-    
-    # Check database connectivity
-    try:
-        db_session = get_database_session()
-        await db_session.execute("SELECT 1")
-        health_status["dependencies"]["database"] = {
-            "status": "healthy",
-            "message": "Database connection successful"
-        }
-    except Exception as e:
-        logger.error("Database health check failed", error=str(e))
-        health_status["dependencies"]["database"] = {
-            "status": "unhealthy",
-            "message": f"Database connection failed: {str(e)}"
-        }
-        health_status["status"] = "not_ready"
-    
-    # Check Redis connectivity
-    try:
-        redis_client = get_redis_client()
-        await redis_client.ping()
-        health_status["dependencies"]["redis"] = {
-            "status": "healthy",
-            "message": "Redis connection successful"
-        }
-    except Exception as e:
-        logger.error("Redis health check failed", error=str(e))
-        health_status["dependencies"]["redis"] = {
-            "status": "unhealthy",
-            "message": f"Redis connection failed: {str(e)}"
-        }
-        health_status["status"] = "not_ready"
-    
-    # Check Kafka connectivity
-    try:
-        kafka_producer = get_kafka_producer()
-        # Mock Kafka health check - in real implementation, this would check actual connectivity
-        health_status["dependencies"]["kafka"] = {
-            "status": "healthy",
-            "message": "Kafka connection successful"
-        }
-    except Exception as e:
-        logger.error("Kafka health check failed", error=str(e))
-        health_status["dependencies"]["kafka"] = {
-            "status": "unhealthy",
-            "message": f"Kafka connection failed: {str(e)}"
-        }
-        health_status["status"] = "not_ready"
-    
-    # Check Aptos connectivity
-    try:
-        aptos_client = get_aptos_client()
-        # Mock Aptos health check - in real implementation, this would check actual connectivity
-        health_status["dependencies"]["aptos"] = {
-            "status": "healthy",
-            "message": "Aptos connection successful"
-        }
-    except Exception as e:
-        logger.error("Aptos health check failed", error=str(e))
-        health_status["dependencies"]["aptos"] = {
-            "status": "unhealthy",
-            "message": f"Aptos connection failed: {str(e)}"
-        }
-        health_status["status"] = "not_ready"
-    
-    return health_status
+    Get liveness status.
 
-
-@health_check_router.get("/live")
-async def liveness_check() -> Dict[str, Any]:
-    """
-    Liveness check endpoint
-    
-    Checks if the service is alive and running.
-    This is a lightweight check that doesn't verify dependencies.
-    
     Returns:
-        Dict containing liveness status
+        Dict: Liveness information
     """
+    alive = await health_checker.check_liveness()
     return {
-        "status": "alive",
-        "service": "CAPP",
-        "timestamp": "2024-01-01T00:00:00Z"  # In real implementation, this would be current timestamp
+        "alive": alive,
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
-
-
-@health_check_router.get("/detailed")
-async def detailed_health_check() -> Dict[str, Any]:
-    """
-    Detailed health check endpoint
-    
-    Provides comprehensive health information including:
-    - Service status
-    - Dependency health
-    - Performance metrics
-    - Configuration status
-    
-    Returns:
-        Dict containing detailed health information
-    """
-    settings = get_settings()
-    
-    health_info = {
-        "service": {
-            "name": "CAPP",
-            "version": settings.APP_VERSION,
-            "environment": settings.ENVIRONMENT,
-            "status": "healthy"
-        },
-        "dependencies": {},
-        "performance": {
-            "uptime": "0 days, 0 hours, 0 minutes",  # Mock uptime
-            "memory_usage": "50 MB",  # Mock memory usage
-            "cpu_usage": "5%",  # Mock CPU usage
-            "active_connections": 0  # Mock connection count
-        },
-        "configuration": {
-            "database_url": "configured" if settings.DATABASE_URL else "not_configured",
-            "redis_url": "configured" if settings.REDIS_URL else "not_configured",
-            "kafka_brokers": "configured" if settings.KAFKA_BROKERS else "not_configured",
-            "aptos_node_url": "configured" if settings.APTOS_NODE_URL else "not_configured"
-        },
-        "features": {
-            "payment_processing": "enabled",
-            "agent_system": "enabled",
-            "blockchain_integration": "enabled",
-            "monitoring": "enabled"
-        }
-    }
-    
-    # Check dependencies with detailed information
-    try:
-        db_session = get_database_session()
-        await db_session.execute("SELECT 1")
-        health_info["dependencies"]["database"] = {
-            "status": "healthy",
-            "type": "PostgreSQL",
-            "url": settings.DATABASE_URL.split("@")[-1] if settings.DATABASE_URL else "unknown",
-            "message": "Database connection successful"
-        }
-    except Exception as e:
-        health_info["dependencies"]["database"] = {
-            "status": "unhealthy",
-            "type": "PostgreSQL",
-            "error": str(e),
-            "message": "Database connection failed"
-        }
-        health_info["service"]["status"] = "degraded"
-    
-    try:
-        redis_client = get_redis_client()
-        await redis_client.ping()
-        health_info["dependencies"]["redis"] = {
-            "status": "healthy",
-            "type": "Redis",
-            "url": settings.REDIS_URL.split("@")[-1] if settings.REDIS_URL else "unknown",
-            "message": "Redis connection successful"
-        }
-    except Exception as e:
-        health_info["dependencies"]["redis"] = {
-            "status": "unhealthy",
-            "type": "Redis",
-            "error": str(e),
-            "message": "Redis connection failed"
-        }
-        health_info["service"]["status"] = "degraded"
-    
-    try:
-        kafka_producer = get_kafka_producer()
-        health_info["dependencies"]["kafka"] = {
-            "status": "healthy",
-            "type": "Apache Kafka",
-            "brokers": settings.KAFKA_BROKERS,
-            "message": "Kafka connection successful"
-        }
-    except Exception as e:
-        health_info["dependencies"]["kafka"] = {
-            "status": "unhealthy",
-            "type": "Apache Kafka",
-            "error": str(e),
-            "message": "Kafka connection failed"
-        }
-        health_info["service"]["status"] = "degraded"
-    
-    try:
-        aptos_client = get_aptos_client()
-        health_info["dependencies"]["aptos"] = {
-            "status": "healthy",
-            "type": "Aptos Blockchain",
-            "node_url": settings.APTOS_NODE_URL,
-            "message": "Aptos connection successful"
-        }
-    except Exception as e:
-        health_info["dependencies"]["aptos"] = {
-            "status": "unhealthy",
-            "type": "Aptos Blockchain",
-            "error": str(e),
-            "message": "Aptos connection failed"
-        }
-        health_info["service"]["status"] = "degraded"
-    
-    return health_info
-
-
-@health_check_router.get("/metrics")
-async def health_metrics() -> Dict[str, Any]:
-    """
-    Health metrics endpoint
-    
-    Provides system metrics for monitoring and alerting.
-    
-    Returns:
-        Dict containing system metrics
-    """
-    # Mock metrics - in real implementation, these would be actual system metrics
-    metrics = {
-        "system": {
-            "uptime_seconds": 3600,  # Mock uptime
-            "memory_usage_bytes": 52428800,  # 50 MB
-            "cpu_usage_percent": 5.0,
-            "disk_usage_percent": 25.0
-        },
-        "application": {
-            "total_requests": 1000,
-            "successful_requests": 950,
-            "failed_requests": 50,
-            "average_response_time_ms": 150,
-            "active_connections": 10
-        },
-        "payments": {
-            "total_payments": 500,
-            "successful_payments": 480,
-            "failed_payments": 20,
-            "average_processing_time_seconds": 2.5,
-            "total_volume_usd": 50000.0
-        },
-        "agents": {
-            "active_agents": 5,
-            "total_agent_executions": 1000,
-            "successful_executions": 980,
-            "failed_executions": 20,
-            "average_execution_time_ms": 500
-        }
-    }
-    
-    return metrics
-
-
-@health_check_router.get("/status")
-async def service_status() -> Dict[str, Any]:
-    """
-    Service status endpoint
-    
-    Provides current service status and operational information.
-    
-    Returns:
-        Dict containing service status information
-    """
-    settings = get_settings()
-    
-    status = {
-        "service": "CAPP - Canza Autonomous Payment Protocol",
-        "version": settings.APP_VERSION,
-        "environment": settings.ENVIRONMENT,
-        "status": "operational",
-        "description": "Autonomous payment infrastructure for African cross-border payments",
-        "features": [
-            "Agent-based payment routing",
-            "Multi-currency support (42+ African currencies)",
-            "Mobile money integration",
-            "Offline-first design",
-            "Regulatory compliance",
-            "Cost optimization (<1% transaction costs)"
-        ],
-        "supported_corridors": [
-            "Kenya ↔ Uganda",
-            "Nigeria ↔ Ghana", 
-            "South Africa ↔ Botswana",
-            "Kenya ↔ Tanzania"
-        ],
-        "performance_targets": {
-            "transaction_cost": "<1%",
-            "settlement_time": "<10 minutes",
-            "uptime": "99.9%",
-            "throughput": "10,000+ concurrent payments"
-        }
-    }
-    
-    return status 
