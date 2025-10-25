@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 import structlog
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models.payments import (
     CrossBorderPayment, PaymentResult, PaymentStatus, PaymentBatch
@@ -21,6 +22,8 @@ from .agents.routing.route_optimization_agent import RouteOptimizationAgent, Rou
 from .core.database import get_database_session
 from .core.redis import get_cache
 from .config.settings import get_settings
+from .repositories.payment import PaymentRepository
+from .utils.payment_mapper import crossborder_payment_to_db, db_payment_to_crossborder
 
 logger = structlog.get_logger(__name__)
 
@@ -248,31 +251,104 @@ class PaymentService:
                 error_code="SETTLEMENT_ERROR"
             )
     
-    async def _store_payment(self, payment: CrossBorderPayment) -> None:
+    async def _store_payment(self, payment: CrossBorderPayment, user_id: Optional[UUID] = None) -> None:
         """Store payment in database"""
         try:
-            # This would integrate with actual database storage
-            # For now, just log
-            self.logger.info("Payment stored", payment_id=payment.payment_id)
-            
+            async with get_database_session() as session:
+                repo = PaymentRepository(session)
+
+                # Convert Pydantic model to SQLAlchemy model
+                db_payment = crossborder_payment_to_db(payment, user_id=user_id)
+
+                # Check if payment already exists (update scenario)
+                existing_payment = await repo.get_by_id(payment.payment_id)
+
+                if existing_payment:
+                    # Update existing payment
+                    await repo.update_status(
+                        payment.payment_id,
+                        payment.status.value,
+                        blockchain_tx_hash=payment.blockchain_tx_hash
+                    )
+                    self.logger.info("Payment updated", payment_id=payment.payment_id)
+                else:
+                    # Create new payment
+                    await repo.create(
+                        payment_id=db_payment.id,
+                        user_id=db_payment.user_id,
+                        reference=db_payment.reference,
+                        sender_name=db_payment.sender_name,
+                        sender_phone=db_payment.sender_phone,
+                        sender_country=db_payment.sender_country,
+                        recipient_name=db_payment.recipient_name,
+                        recipient_phone=db_payment.recipient_phone,
+                        recipient_country=db_payment.recipient_country,
+                        payment_type=db_payment.payment_type,
+                        payment_method=db_payment.payment_method,
+                        amount=db_payment.amount,
+                        from_currency=db_payment.from_currency,
+                        to_currency=db_payment.to_currency,
+                        exchange_rate=db_payment.exchange_rate,
+                        converted_amount=db_payment.converted_amount,
+                        fees=db_payment.fees,
+                        total_cost=db_payment.total_cost,
+                        status=db_payment.status,
+                        sender_email=db_payment.sender_email,
+                        sender_address=db_payment.sender_address,
+                        recipient_email=db_payment.recipient_email,
+                        recipient_address=db_payment.recipient_address,
+                        recipient_bank_account=db_payment.recipient_bank_account,
+                        recipient_bank_name=db_payment.recipient_bank_name,
+                        recipient_mmo_account=db_payment.recipient_mmo_account,
+                        recipient_mmo_provider=db_payment.recipient_mmo_provider,
+                        route_id=db_payment.route_id,
+                        blockchain_tx_hash=db_payment.blockchain_tx_hash,
+                        agent_id=db_payment.agent_id,
+                        workflow_id=db_payment.workflow_id,
+                        compliance_status=db_payment.compliance_status,
+                        fraud_score=db_payment.fraud_score,
+                        risk_level=db_payment.risk_level,
+                        sender_kyc_verified=db_payment.sender_kyc_verified,
+                        recipient_kyc_verified=db_payment.recipient_kyc_verified,
+                        description=db_payment.description,
+                        metadata=db_payment.metadata,
+                        offline_queued=db_payment.offline_queued,
+                        created_at=db_payment.created_at,
+                        expires_at=db_payment.expires_at,
+                    )
+                    self.logger.info("Payment stored", payment_id=payment.payment_id)
+
         except Exception as e:
-            self.logger.error("Failed to store payment", error=str(e))
+            self.logger.error("Failed to store payment", payment_id=payment.payment_id, error=str(e))
+            raise
     
     async def get_payment(self, payment_id: UUID) -> Optional[CrossBorderPayment]:
         """
         Get payment by ID
-        
+
         Args:
             payment_id: The payment ID
-            
+
         Returns:
             CrossBorderPayment: The payment, or None if not found
         """
         try:
-            # This would query the database
-            # For now, return None
-            return None
-            
+            async with get_database_session() as session:
+                repo = PaymentRepository(session)
+
+                # Get payment from database
+                db_payment = await repo.get_by_id(payment_id)
+
+                if not db_payment:
+                    self.logger.warning("Payment not found", payment_id=payment_id)
+                    return None
+
+                # Convert SQLAlchemy model to Pydantic model
+                payment = db_payment_to_crossborder(db_payment)
+
+                self.logger.info("Payment retrieved", payment_id=payment_id)
+                return payment
+
         except Exception as e:
             self.logger.error("Failed to get payment", payment_id=payment_id, error=str(e))
             return None

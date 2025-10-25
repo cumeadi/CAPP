@@ -17,6 +17,7 @@ from .core.rate_limit import limiter, rate_limit_exceeded_handler
 from .core.validation import RequestValidationMiddleware
 from .core.security_headers import SecurityHeadersMiddleware
 from .core.secrets import validate_all_secrets_on_startup
+from .core.error_handlers import register_error_handlers
 
 # Configure structured logging
 structlog.configure(
@@ -50,6 +51,9 @@ app = FastAPI(
 
 # Add rate limiter state
 app.state.limiter = limiter
+
+# Register error handlers (handles all application exceptions)
+register_error_handlers(app)
 
 # Add rate limit exception handler
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
