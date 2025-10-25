@@ -9,9 +9,14 @@ import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 
 from .config.settings import settings
 from .api.v1.router import api_router
+from .core.rate_limit import limiter, rate_limit_exceeded_handler
+from .core.validation import RequestValidationMiddleware
+from .core.security_headers import SecurityHeadersMiddleware
+from .core.secrets import validate_all_secrets_on_startup
 
 # Configure structured logging
 structlog.configure(
@@ -43,17 +48,47 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+# Add rate limiter state
+app.state.limiter = limiter
+
+# Add rate limit exception handler
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+# Add security headers middleware (first to ensure all responses have security headers)
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Add validation middleware (processes requests before other middleware)
+app.add_middleware(RequestValidationMiddleware)
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=settings.ALLOWED_ORIGINS,  # Environment-based whitelist
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Content-Type", "Authorization", "X-Request-ID", "X-API-Key"],
 )
 
 # Include API routes
 app.include_router(api_router, prefix="/api/v1")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Application startup event"""
+    logger.info("Starting CAPP application...")
+
+    # Validate secrets on startup
+    validate_all_secrets_on_startup()
+
+    logger.info("CAPP application started successfully")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Application shutdown event"""
+    logger.info("Shutting down CAPP application...")
+
 
 @app.get("/")
 async def root():
