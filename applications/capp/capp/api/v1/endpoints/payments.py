@@ -13,9 +13,11 @@ from ...models.payments import (
     CrossBorderPayment, PaymentResult, PaymentStatus, PaymentType,
     PaymentMethod, Country, Currency, MMOProvider
 )
+from ...models.user import User
 from ...services.payment_service import PaymentService
 from ...core.database import get_db
 from ...core.redis import get_redis_client
+from ...api.dependencies.auth import get_current_active_user, get_optional_user
 
 router = APIRouter()
 
@@ -77,13 +79,16 @@ class PaymentStatusResponse(BaseModel):
 @router.post("/create", response_model=PaymentResponse)
 async def create_payment(
     request: CreatePaymentRequest,
-    payment_service: PaymentService = Depends()
+    payment_service: PaymentService = Depends(),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Create a new cross-border payment
-    
+
     This endpoint initiates a cross-border payment with route optimization
     and agent-based processing.
+
+    **Authentication required**: Bearer token
     """
     try:
         # Create payment object
@@ -141,13 +146,16 @@ async def create_payment(
 @router.get("/{payment_id}/status", response_model=PaymentStatusResponse)
 async def get_payment_status(
     payment_id: UUID,
-    payment_service: PaymentService = Depends()
+    payment_service: PaymentService = Depends(),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Get the status of a payment
-    
+
     Returns detailed information about the payment including current status,
     fees, exchange rate, and delivery time.
+
+    **Authentication required**: Bearer token
     """
     try:
         payment = await payment_service.get_payment(payment_id)
@@ -186,12 +194,15 @@ async def get_payment_status(
 @router.post("/{payment_id}/cancel")
 async def cancel_payment(
     payment_id: UUID,
-    payment_service: PaymentService = Depends()
+    payment_service: PaymentService = Depends(),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Cancel a payment
-    
+
     Only payments in PENDING or PROCESSING status can be cancelled.
+
+    **Authentication required**: Bearer token
     """
     try:
         result = await payment_service.cancel_payment(payment_id)
