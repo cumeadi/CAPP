@@ -19,6 +19,8 @@ from ..models.payments import (
 )
 from ..services.compliance import ComplianceService
 from ..core.redis import get_cache
+from ..core.database import AsyncSessionLocal
+from ..repositories.compliance import ComplianceRecordRepository
 from ..config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
@@ -294,7 +296,10 @@ class ComplianceAgent(BasePaymentAgent):
             
             # Calculate processing time
             processing_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
-            
+
+            # Save compliance checks to database
+            await self._save_compliance_checks_to_db(payment, checks, overall_risk_score)
+
             self.logger.info(
                 "Compliance validation completed",
                 payment_id=payment.payment_id,
@@ -304,7 +309,7 @@ class ComplianceAgent(BasePaymentAgent):
                 violations_count=len(violations),
                 processing_time_ms=processing_time
             )
-            
+
             return ComplianceResult(
                 success=is_compliant,
                 payment_id=str(payment.payment_id),
@@ -764,14 +769,67 @@ class ComplianceAgent(BasePaymentAgent):
         }
         
         self.violations_log.append(violation)
-        
+
         # Store in cache for reporting
         await self.cache.set(
             f"compliance_violation:{payment.payment_id}",
             violation,
             86400  # 24 hours TTL
         )
-    
+
+    async def _save_compliance_checks_to_db(
+        self,
+        payment: CrossBorderPayment,
+        checks: List[ComplianceCheck],
+        overall_risk_score: float
+    ):
+        """Save compliance checks to database for audit trail and analytics"""
+        try:
+            from uuid import UUID
+            import json
+
+            async with AsyncSessionLocal() as session:
+                repo = ComplianceRecordRepository(session)
+
+                # Determine user_id (sender is the one being checked)
+                sender_id = UUID(str(payment.sender.sender_id)) if hasattr(payment.sender, 'sender_id') and payment.sender.sender_id else None
+                payment_id = UUID(str(payment.payment_id)) if payment.payment_id else None
+
+                # Save each compliance check type as a separate record
+                for check in checks:
+                    risk_score_int = int(check.risk_score * 100)  # Convert to 0-100 scale
+
+                    details_json = json.dumps({
+                        "check_id": check.check_id,
+                        "duration_ms": check.duration_ms,
+                        "timestamp": check.timestamp.isoformat(),
+                        "details": check.details
+                    })
+
+                    if sender_id:
+                        await repo.create(
+                            user_id=sender_id,
+                            payment_id=payment_id,
+                            check_type=check.check_type,
+                            status=check.status,
+                            risk_score=risk_score_int,
+                            details=details_json
+                        )
+
+                self.logger.debug(
+                    "Compliance checks saved to database",
+                    payment_id=payment.payment_id,
+                    checks_count=len(checks)
+                )
+
+        except Exception as e:
+            # Log but don't fail the compliance check if database save fails
+            self.logger.warning(
+                "Failed to save compliance checks to database",
+                error=str(e),
+                payment_id=payment.payment_id
+            )
+
     def _generate_compliance_recommendations(self, payments: List[CrossBorderPayment]) -> List[str]:
         """Generate compliance recommendations based on payment data"""
         recommendations = []
@@ -808,25 +866,41 @@ class ComplianceAgent(BasePaymentAgent):
             self.logger.error("Failed to generate regulatory reports", error=str(e))
     
     async def get_compliance_analytics(self) -> Dict[str, Any]:
-        """Get compliance analytics"""
+        """Get compliance analytics from database"""
         try:
-            total_checks = sum(len(checks) for checks in self.compliance_checks.values())
-            passed_checks = sum(
-                sum(1 for check in checks if check.status == "passed")
-                for checks in self.compliance_checks.values()
-            )
-            
-            compliance_rate = passed_checks / total_checks if total_checks > 0 else 1.0
-            
-            return {
-                "total_checks": total_checks,
-                "passed_checks": passed_checks,
-                "compliance_rate": compliance_rate,
-                "violations_count": len(self.violations_log),
-                "reports_generated": len(self.regulatory_reports),
-                "average_risk_score": sum(self.risk_scores.values()) / len(self.risk_scores) if self.risk_scores else 0.0
-            }
-            
+            from datetime import timedelta
+
+            async with AsyncSessionLocal() as session:
+                repo = ComplianceRecordRepository(session)
+
+                # Get statistics from database for last 30 days
+                end_date = datetime.now(timezone.utc)
+                start_date = end_date - timedelta(days=30)
+
+                stats = await repo.get_statistics(start_date=start_date, end_date=end_date)
+
+                # Calculate compliance rate
+                total_checks = stats["total_count"]
+                passed_checks = stats["status_counts"].get("passed", 0)
+                compliance_rate = passed_checks / total_checks if total_checks > 0 else 1.0
+
+                # Count high-risk records
+                high_risk_records = await repo.get_high_risk_users(risk_threshold=70)
+
+                return {
+                    "total_checks": total_checks,
+                    "passed_checks": passed_checks,
+                    "failed_checks": stats["status_counts"].get("failed", 0),
+                    "pending_checks": stats["status_counts"].get("pending", 0),
+                    "compliance_rate": round(compliance_rate, 4),
+                    "average_risk_score": stats["avg_risk_score"],
+                    "high_risk_count": len(high_risk_records),
+                    "check_type_distribution": stats["check_type_counts"],
+                    "period_days": 30,
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat()
+                }
+
         except Exception as e:
             self.logger.error("Failed to get compliance analytics", error=str(e))
             return {} 
