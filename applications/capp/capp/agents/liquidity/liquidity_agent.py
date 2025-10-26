@@ -18,6 +18,8 @@ from ..models.payments import (
     Country, Currency
 )
 from ..core.redis import get_cache
+from ..core.database import AsyncSessionLocal
+from ..repositories.liquidity import LiquidityPoolRepository, LiquidityReservationRepository
 from ..config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
@@ -93,79 +95,87 @@ class LiquidityAgent(BasePaymentAgent):
         super().__init__(config)
         self.config = config
         self.cache = get_cache()
-        
-        # Liquidity pools cache
+
+        # Liquidity pools cache (for performance)
         self.liquidity_pools: Dict[str, LiquidityPool] = {}
         self.active_reservations: Dict[str, LiquidityReservation] = {}
-        
-        # Initialize default pools
-        self._initialize_default_pools()
+
+        # Note: Pools are now loaded from database on-demand rather than pre-initialized
     
-    def _initialize_default_pools(self):
-        """Initialize default liquidity pools for demo"""
-        current_time = datetime.now(timezone.utc)
-        
-        default_pools = [
-            {
-                "pool_id": "pool_kes_ugx",
-                "currency_pair": "KES/UGX",
-                "from_currency": "KES",
-                "to_currency": "UGX",
-                "total_liquidity": Decimal("1000000.00"),
-                "available_liquidity": Decimal("800000.00"),
-                "reserved_liquidity": Decimal("200000.00")
-            },
-            {
-                "pool_id": "pool_ngn_ghs",
-                "currency_pair": "NGN/GHS",
-                "from_currency": "NGN",
-                "to_currency": "GHS",
-                "total_liquidity": Decimal("5000000.00"),
-                "available_liquidity": Decimal("4000000.00"),
-                "reserved_liquidity": Decimal("1000000.00")
-            },
-            {
-                "pool_id": "pool_zar_bwp",
-                "currency_pair": "ZAR/BWP",
-                "from_currency": "ZAR",
-                "to_currency": "BWP",
-                "total_liquidity": Decimal("2000000.00"),
-                "available_liquidity": Decimal("1600000.00"),
-                "reserved_liquidity": Decimal("400000.00")
-            },
-            {
-                "pool_id": "pool_usd_ngn",
-                "currency_pair": "USD/NGN",
-                "from_currency": "USD",
-                "to_currency": "NGN",
-                "total_liquidity": Decimal("100000.00"),
-                "available_liquidity": Decimal("80000.00"),
-                "reserved_liquidity": Decimal("20000.00")
-            },
-            {
-                "pool_id": "pool_usd_kes",
-                "currency_pair": "USD/KES",
-                "from_currency": "USD",
-                "to_currency": "KES",
-                "total_liquidity": Decimal("50000.00"),
-                "available_liquidity": Decimal("40000.00"),
-                "reserved_liquidity": Decimal("10000.00")
-            }
-        ]
-        
-        for pool_data in default_pools:
-            pool = LiquidityPool(
-                pool_id=pool_data["pool_id"],
-                currency_pair=pool_data["currency_pair"],
-                from_currency=Currency(pool_data["from_currency"]),
-                to_currency=Currency(pool_data["to_currency"]),
-                total_liquidity=pool_data["total_liquidity"],
-                available_liquidity=pool_data["available_liquidity"],
-                reserved_liquidity=pool_data["reserved_liquidity"],
-                utilization_rate=float(pool_data["reserved_liquidity"] / pool_data["total_liquidity"]),
-                last_updated=current_time
+    async def _get_or_create_pool(
+        self,
+        from_currency: Currency,
+        to_currency: Currency
+    ) -> Optional[LiquidityPool]:
+        """
+        Get liquidity pool from database or create if doesn't exist
+
+        Args:
+            from_currency: Source currency
+            to_currency: Target currency
+
+        Returns:
+            LiquidityPool model or None
+        """
+        try:
+            async with AsyncSessionLocal() as session:
+                repo = LiquidityPoolRepository(session)
+
+                # Try to get existing pool
+                pool_db = await repo.get_by_currency(to_currency)
+
+                if not pool_db:
+                    # Create new pool with default liquidity
+                    self.logger.info(
+                        "Creating new liquidity pool",
+                        currency=to_currency,
+                        initial_liquidity=100000.00
+                    )
+                    pool_db = await repo.create(
+                        currency=to_currency,
+                        country=self._get_country_for_currency(to_currency),
+                        total_liquidity=Decimal("100000.00"),
+                        min_balance=Decimal("10000.00"),
+                        rebalance_threshold=Decimal(str(self.config.rebalancing_threshold))
+                    )
+
+                # Convert to agent model
+                current_time = datetime.now(timezone.utc)
+                pool = LiquidityPool(
+                    pool_id=str(pool_db.id),
+                    currency_pair=f"{from_currency}/{to_currency}",
+                    from_currency=from_currency,
+                    to_currency=to_currency,
+                    total_liquidity=pool_db.total_liquidity,
+                    available_liquidity=pool_db.available_liquidity,
+                    reserved_liquidity=pool_db.reserved_liquidity,
+                    utilization_rate=float(pool_db.reserved_liquidity / pool_db.total_liquidity) if pool_db.total_liquidity > 0 else 0.0,
+                    last_updated=pool_db.updated_at,
+                    status="active" if pool_db.is_active else "inactive"
+                )
+
+                # Cache the pool
+                self.liquidity_pools[pool.pool_id] = pool
+
+                return pool
+
+        except Exception as e:
+            self.logger.error(
+                "Failed to get or create liquidity pool",
+                error=str(e),
+                from_currency=from_currency,
+                to_currency=to_currency
             )
-            self.liquidity_pools[pool.pool_id] = pool
+            return None
+
+    def _get_country_for_currency(self, currency: Currency) -> str:
+        """Map currency to country code"""
+        currency_country_map = {
+            "NGN": "NG", "KES": "KE", "UGX": "UG", "TZS": "TZ",
+            "GHS": "GH", "ZAR": "ZA", "BWP": "BW", "ZMW": "ZM",
+            "XOF": "SN", "RWF": "RW", "ETB": "ET"
+        }
+        return currency_country_map.get(str(currency), "XX")
     
     async def process_payment(self, payment: CrossBorderPayment) -> PaymentResult:
         """
@@ -258,17 +268,18 @@ class LiquidityAgent(BasePaymentAgent):
     async def check_liquidity_availability(self, payment: CrossBorderPayment) -> LiquidityResult:
         """
         Check if sufficient liquidity is available for payment
-        
+
         Args:
             payment: The payment to check liquidity for
-            
+
         Returns:
             LiquidityResult: Liquidity availability result
         """
         try:
-            pool_id = self._get_pool_id(payment.from_currency, payment.to_currency)
-            
-            if not pool_id:
+            # Get or create pool from database
+            pool = await self._get_or_create_pool(payment.from_currency, payment.to_currency)
+
+            if not pool:
                 return LiquidityResult(
                     success=False,
                     available_amount=Decimal("0"),
@@ -276,53 +287,43 @@ class LiquidityAgent(BasePaymentAgent):
                     pool_id="",
                     message="No liquidity pool found for currency pair"
                 )
-            
-            pool = self.liquidity_pools.get(pool_id)
-            if not pool:
-                return LiquidityResult(
-                    success=False,
-                    available_amount=Decimal("0"),
-                    reserved_amount=Decimal("0"),
-                    pool_id=pool_id,
-                    message="Liquidity pool not found"
-                )
-            
+
             # Check if pool has sufficient available liquidity
             if pool.available_liquidity < payment.amount:
                 return LiquidityResult(
                     success=False,
                     available_amount=pool.available_liquidity,
                     reserved_amount=pool.reserved_liquidity,
-                    pool_id=pool_id,
+                    pool_id=pool.pool_id,
                     message=f"Insufficient liquidity. Available: {pool.available_liquidity}, Required: {payment.amount}"
                 )
-            
+
             # Check utilization rate
             if pool.utilization_rate > self.config.max_liquidity_utilization:
                 return LiquidityResult(
                     success=False,
                     available_amount=pool.available_liquidity,
                     reserved_amount=pool.reserved_liquidity,
-                    pool_id=pool_id,
+                    pool_id=pool.pool_id,
                     message=f"Pool utilization too high: {pool.utilization_rate:.2%}"
                 )
-            
+
             self.logger.info(
                 "Liquidity availability check passed",
                 payment_id=payment.payment_id,
-                pool_id=pool_id,
+                pool_id=pool.pool_id,
                 available_amount=pool.available_liquidity,
                 required_amount=payment.amount
             )
-            
+
             return LiquidityResult(
                 success=True,
                 available_amount=pool.available_liquidity,
                 reserved_amount=pool.reserved_liquidity,
-                pool_id=pool_id,
+                pool_id=pool.pool_id,
                 message="Sufficient liquidity available"
             )
-            
+
         except Exception as e:
             self.logger.error("Liquidity availability check failed", error=str(e))
             return LiquidityResult(
@@ -336,17 +337,17 @@ class LiquidityAgent(BasePaymentAgent):
     async def reserve_liquidity(self, payment: CrossBorderPayment) -> LiquidityResult:
         """
         Reserve liquidity for payment
-        
+
         Args:
             payment: The payment to reserve liquidity for
-            
+
         Returns:
             LiquidityResult: Reservation result
         """
         try:
-            pool_id = self._get_pool_id(payment.from_currency, payment.to_currency)
-            pool = self.liquidity_pools.get(pool_id)
-            
+            # Get pool from database
+            pool = await self._get_or_create_pool(payment.from_currency, payment.to_currency)
+
             if not pool:
                 return LiquidityResult(
                     success=False,
@@ -355,51 +356,62 @@ class LiquidityAgent(BasePaymentAgent):
                     pool_id="",
                     message="Liquidity pool not found"
                 )
-            
-            # Create reservation
-            reservation_id = f"res_{payment.payment_id}_{datetime.now().timestamp()}"
-            expires_at = datetime.now(timezone.utc).replace(second=0, microsecond=0) + \
-                        asyncio.get_event_loop().time() + self.config.reservation_timeout
-            
-            reservation = LiquidityReservation(
-                reservation_id=reservation_id,
-                payment_id=str(payment.payment_id),
-                pool_id=pool_id,
-                amount=payment.amount,
-                currency=payment.from_currency,
-                reserved_at=datetime.now(timezone.utc),
-                expires_at=expires_at
-            )
-            
-            # Update pool
-            pool.available_liquidity -= payment.amount
-            pool.reserved_liquidity += payment.amount
-            pool.utilization_rate = float(pool.reserved_liquidity / pool.total_liquidity)
-            pool.last_updated = datetime.now(timezone.utc)
-            
-            # Store reservation
-            self.active_reservations[reservation_id] = reservation
-            
-            # Cache reservation
-            await self.cache.set(f"liquidity_reservation:{reservation_id}", reservation.dict(), self.config.reservation_timeout)
-            
-            self.logger.info(
-                "Liquidity reserved successfully",
-                payment_id=payment.payment_id,
-                reservation_id=reservation_id,
-                amount=payment.amount,
-                pool_id=pool_id
-            )
-            
-            return LiquidityResult(
-                success=True,
-                available_amount=pool.available_liquidity,
-                reserved_amount=pool.reserved_liquidity,
-                pool_id=pool_id,
-                message="Liquidity reserved successfully",
-                reservation_id=reservation_id
-            )
-            
+
+            async with AsyncSessionLocal() as session:
+                pool_repo = LiquidityPoolRepository(session)
+                reservation_repo = LiquidityReservationRepository(session)
+
+                # Reserve liquidity in the pool
+                success = await pool_repo.reserve_liquidity(pool.to_currency, payment.amount)
+
+                if not success:
+                    return LiquidityResult(
+                        success=False,
+                        available_amount=pool.available_liquidity,
+                        reserved_amount=pool.reserved_liquidity,
+                        pool_id=pool.pool_id,
+                        message="Failed to reserve liquidity in pool"
+                    )
+
+                # Create reservation record
+                from uuid import UUID, uuid4
+                pool_uuid = UUID(pool.pool_id) if pool.pool_id else uuid4()
+                payment_uuid = UUID(str(payment.payment_id)) if hasattr(payment.payment_id, '__str__') else uuid4()
+
+                reservation_db = await reservation_repo.create(
+                    pool_id=pool_uuid,
+                    payment_id=payment_uuid,
+                    amount=payment.amount,
+                    currency=str(payment.to_currency),
+                    expiry_minutes=self.config.reservation_timeout // 60
+                )
+
+                # Update cached pool
+                pool.available_liquidity -= payment.amount
+                pool.reserved_liquidity += payment.amount
+                pool.utilization_rate = float(pool.reserved_liquidity / pool.total_liquidity) if pool.total_liquidity > 0 else 0.0
+                pool.last_updated = datetime.now(timezone.utc)
+                self.liquidity_pools[pool.pool_id] = pool
+
+                reservation_id = str(reservation_db.id)
+
+                self.logger.info(
+                    "Liquidity reserved successfully",
+                    payment_id=payment.payment_id,
+                    reservation_id=reservation_id,
+                    amount=payment.amount,
+                    pool_id=pool.pool_id
+                )
+
+                return LiquidityResult(
+                    success=True,
+                    available_amount=pool.available_liquidity,
+                    reserved_amount=pool.reserved_liquidity,
+                    pool_id=pool.pool_id,
+                    message="Liquidity reserved successfully",
+                    reservation_id=reservation_id
+                )
+
         except Exception as e:
             self.logger.error("Liquidity reservation failed", error=str(e))
             return LiquidityResult(
@@ -413,84 +425,106 @@ class LiquidityAgent(BasePaymentAgent):
     async def release_liquidity(self, reservation_id: str) -> bool:
         """
         Release reserved liquidity
-        
+
         Args:
             reservation_id: The reservation ID to release
-            
+
         Returns:
             bool: Success status
         """
         try:
-            reservation = self.active_reservations.get(reservation_id)
-            if not reservation:
-                self.logger.warning("Reservation not found", reservation_id=reservation_id)
-                return False
-            
-            pool = self.liquidity_pools.get(reservation.pool_id)
-            if not pool:
-                self.logger.warning("Pool not found for reservation", pool_id=reservation.pool_id)
-                return False
-            
-            # Update pool
-            pool.available_liquidity += reservation.amount
-            pool.reserved_liquidity -= reservation.amount
-            pool.utilization_rate = float(pool.reserved_liquidity / pool.total_liquidity)
-            pool.last_updated = datetime.now(timezone.utc)
-            
-            # Remove reservation
-            del self.active_reservations[reservation_id]
-            
-            # Remove from cache
-            await self.cache.delete(f"liquidity_reservation:{reservation_id}")
-            
-            self.logger.info(
-                "Liquidity released",
-                reservation_id=reservation_id,
-                amount=reservation.amount,
-                pool_id=reservation.pool_id
-            )
-            
-            return True
-            
+            from uuid import UUID
+
+            async with AsyncSessionLocal() as session:
+                reservation_repo = LiquidityReservationRepository(session)
+                pool_repo = LiquidityPoolRepository(session)
+
+                # Get reservation from database
+                reservation_db = await reservation_repo.get_by_id(UUID(reservation_id))
+
+                if not reservation_db:
+                    self.logger.warning("Reservation not found", reservation_id=reservation_id)
+                    return False
+
+                # Release reservation in database
+                success = await reservation_repo.release_reservation(UUID(reservation_id))
+
+                if not success:
+                    return False
+
+                # Release liquidity in pool
+                await pool_repo.release_liquidity(reservation_db.currency, reservation_db.amount)
+
+                # Update cache
+                if reservation_db.pool_id in [UUID(p.pool_id) for p in self.liquidity_pools.values()]:
+                    # Invalidate cached pool
+                    for pool_id, pool in list(self.liquidity_pools.items()):
+                        if UUID(pool_id) == reservation_db.pool_id:
+                            del self.liquidity_pools[pool_id]
+                            break
+
+                self.logger.info(
+                    "Liquidity released",
+                    reservation_id=reservation_id,
+                    amount=float(reservation_db.amount),
+                    pool_id=str(reservation_db.pool_id)
+                )
+
+                return True
+
         except Exception as e:
-            self.logger.error("Failed to release liquidity", error=str(e))
+            self.logger.error("Failed to release liquidity", error=str(e), reservation_id=reservation_id)
             return False
-    
+
     async def use_liquidity(self, reservation_id: str) -> bool:
         """
         Mark liquidity as used (payment completed)
-        
+
         Args:
             reservation_id: The reservation ID to mark as used
-            
+
         Returns:
             bool: Success status
         """
         try:
-            reservation = self.active_reservations.get(reservation_id)
-            if not reservation:
-                self.logger.warning("Reservation not found", reservation_id=reservation_id)
-                return False
-            
-            # Mark reservation as used
-            reservation.status = "used"
-            
-            # Remove from active reservations
-            del self.active_reservations[reservation_id]
-            
-            # Update cache
-            await self.cache.set(f"liquidity_reservation:{reservation_id}", reservation.dict(), 3600)  # Keep for 1 hour
-            
-            self.logger.info(
-                "Liquidity marked as used",
-                reservation_id=reservation_id,
-                payment_id=reservation.payment_id
-            )
-            
-            return True
-            
+            from uuid import UUID
+
+            async with AsyncSessionLocal() as session:
+                reservation_repo = LiquidityReservationRepository(session)
+                pool_repo = LiquidityPoolRepository(session)
+
+                # Get reservation from database
+                reservation_db = await reservation_repo.get_by_id(UUID(reservation_id))
+
+                if not reservation_db:
+                    self.logger.warning("Reservation not found", reservation_id=reservation_id)
+                    return False
+
+                # Mark reservation as used in database
+                success = await reservation_repo.use_reservation(UUID(reservation_id))
+
+                if not success:
+                    return False
+
+                # Use liquidity from pool (decreases both reserved and total)
+                await pool_repo.use_liquidity(reservation_db.currency, reservation_db.amount)
+
+                # Invalidate cached pool
+                for pool_id, pool in list(self.liquidity_pools.items()):
+                    if UUID(pool_id) == reservation_db.pool_id:
+                        del self.liquidity_pools[pool_id]
+                        break
+
+                self.logger.info(
+                    "Liquidity marked as used",
+                    reservation_id=reservation_id,
+                    payment_id=str(reservation_db.payment_id)
+                )
+
+                return True
+
         except Exception as e:
-            self.logger.error("Failed to mark liquidity as used", error=str(e))
+            self.logger.error("Failed to mark liquidity as used", error=str(e), reservation_id=reservation_id)
             return False
     
     async def rebalance_pools(self) -> None:
@@ -576,18 +610,25 @@ class LiquidityAgent(BasePaymentAgent):
     async def cleanup_expired_reservations(self):
         """Clean up expired liquidity reservations"""
         try:
-            current_time = datetime.now(timezone.utc)
-            expired_reservations = []
-            
-            for reservation_id, reservation in self.active_reservations.items():
-                if current_time > reservation.expires_at:
-                    expired_reservations.append(reservation_id)
-            
-            for reservation_id in expired_reservations:
-                await self.release_liquidity(reservation_id)
-            
-            if expired_reservations:
-                self.logger.info("Cleaned up expired reservations", count=len(expired_reservations))
-                
+            async with AsyncSessionLocal() as session:
+                reservation_repo = LiquidityReservationRepository(session)
+                pool_repo = LiquidityPoolRepository(session)
+
+                # Get expired reservations from database
+                expired_reservations = await reservation_repo.get_expired_reservations()
+
+                for reservation in expired_reservations:
+                    # Release liquidity back to pool
+                    await pool_repo.release_liquidity(reservation.currency, reservation.amount)
+
+                # Mark all as expired in database
+                expired_count = await reservation_repo.cleanup_expired_reservations()
+
+                if expired_count > 0:
+                    self.logger.info("Cleaned up expired reservations", count=expired_count)
+
+                # Clear local cache
+                self.liquidity_pools.clear()
+
         except Exception as e:
             self.logger.error("Failed to cleanup expired reservations", error=str(e)) 
