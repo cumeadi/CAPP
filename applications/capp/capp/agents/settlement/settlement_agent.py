@@ -19,6 +19,9 @@ from ..models.payments import (
 )
 from ..core.aptos import get_aptos_client, AptosSettlementService
 from ..core.redis import get_cache
+from ..core.database import AsyncSessionLocal
+from ..repositories.payment import PaymentRepository
+from ..repositories.agent_activity import AgentActivityRepository
 from ..config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
@@ -305,14 +308,17 @@ class SettlementAgent(BasePaymentAgent):
             self.completed_batches[batch.batch_id] = batch
             if batch.batch_id in self.processing_batches:
                 del self.processing_batches[batch.batch_id]
-            
+
+            # Save settlement to database
+            await self._save_settlement_to_db(batch, tx_hash, processing_time)
+
             self.logger.info(
                 "Settlement batch completed",
                 batch_id=batch.batch_id,
                 tx_hash=tx_hash,
                 processing_time=processing_time
             )
-            
+
             return tx_hash
             
         except Exception as e:
@@ -467,32 +473,103 @@ class SettlementAgent(BasePaymentAgent):
             self.logger.error("Failed to retry settlement", error=str(e))
             return False
     
-    async def get_settlement_analytics(self) -> Dict[str, any]:
-        """Get settlement analytics"""
+    async def _save_settlement_to_db(
+        self,
+        batch: SettlementBatch,
+        tx_hash: str,
+        processing_time: float
+    ):
+        """Save settlement batch to database"""
         try:
-            total_batches = len(self.completed_batches)
-            total_payments = sum(len(batch.payments) for batch in self.completed_batches.values())
-            total_amount = sum(batch.total_amount for batch in self.completed_batches.values())
-            
-            # Calculate average processing time
-            processing_times = [batch.processing_time for batch in self.completed_batches.values() if batch.processing_time]
-            avg_processing_time = sum(processing_times) / len(processing_times) if processing_times else 0
-            
-            # Calculate success rate
-            failed_batches = [batch for batch in self.completed_batches.values() if batch.status == "failed"]
-            success_rate = (total_batches - len(failed_batches)) / total_batches if total_batches > 0 else 0
-            
+            from uuid import UUID
+
+            async with AsyncSessionLocal() as session:
+                payment_repo = PaymentRepository(session)
+                activity_repo = AgentActivityRepository(session)
+
+                # Update each payment with blockchain tx hash and mark as settled
+                for payment in batch.payments:
+                    try:
+                        payment_uuid = UUID(str(payment.payment_id))
+
+                        # Update payment with blockchain info
+                        await payment_repo.update_payment(
+                            payment_uuid,
+                            blockchain_tx_hash=tx_hash,
+                            settled_at=datetime.now(timezone.utc),
+                            status="settled"
+                        )
+
+                        # Log settlement activity
+                        await activity_repo.create(
+                            payment_id=payment_uuid,
+                            agent_type="settlement",
+                            agent_id=batch.batch_id,
+                            action="settle_payment",
+                            status="success",
+                            details=f'{{"batch_id": "{batch.batch_id}", "tx_hash": "{tx_hash}", "gas_used": {batch.gas_used}}}'
+                        )
+
+                        # Update processing time
+                        activity = await activity_repo.get_by_payment(payment_uuid, limit=1)
+                        if activity:
+                            await activity_repo.update_status(
+                                activity[0].id,
+                                status="success",
+                                processing_time_ms=int(processing_time * 1000)
+                            )
+
+                    except Exception as payment_error:
+                        self.logger.warning(
+                            "Failed to update payment in database",
+                            payment_id=str(payment.payment_id),
+                            error=str(payment_error)
+                        )
+
+                self.logger.debug(
+                    "Settlement batch saved to database",
+                    batch_id=batch.batch_id,
+                    payments_count=len(batch.payments)
+                )
+
+        except Exception as e:
+            # Log but don't fail settlement if database save fails
+            self.logger.warning(
+                "Failed to save settlement to database",
+                error=str(e),
+                batch_id=batch.batch_id
+            )
+
+    async def get_settlement_analytics(self) -> Dict[str, any]:
+        """Get settlement analytics from database"""
+        try:
+            from datetime import timedelta
+
+            async with AsyncSessionLocal() as session:
+                activity_repo = AgentActivityRepository(session)
+
+                # Get settlement metrics from last 30 days
+                end_date = datetime.now(timezone.utc)
+                start_date = end_date - timedelta(days=30)
+
+                metrics = await activity_repo.get_agent_performance_metrics(
+                    "settlement",
+                    start_date=start_date,
+                    end_date=end_date
+                )
+
+                # Add current queue status
+                metrics["queue_size"] = len(self.payment_queue)
+                metrics["pending_batches"] = len(self.pending_batches)
+                metrics["processing_batches"] = len(self.processing_batches)
+
+                return metrics
+
+        except Exception as e:
+            self.logger.error("Failed to get settlement analytics", error=str(e))
+            # Fallback to in-memory analytics
             return {
-                "total_batches": total_batches,
-                "total_payments": total_payments,
-                "total_amount": float(total_amount),
-                "average_processing_time": avg_processing_time,
-                "success_rate": success_rate,
                 "queue_size": len(self.payment_queue),
                 "pending_batches": len(self.pending_batches),
                 "processing_batches": len(self.processing_batches)
-            }
-            
-        except Exception as e:
-            self.logger.error("Failed to get settlement analytics", error=str(e))
-            return {} 
+            } 
