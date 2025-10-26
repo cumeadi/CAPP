@@ -24,6 +24,8 @@ from ..services.exchange_rates import ExchangeRateService
 from ..services.compliance import ComplianceService
 from ..services.mmo_availability import MMOAvailabilityService
 from ..core.redis import get_redis_client
+from ..core.database import AsyncSessionLocal
+from ..repositories.agent_activity import AgentActivityRepository
 
 
 logger = structlog.get_logger(__name__)
@@ -137,7 +139,10 @@ class RouteOptimizationAgent(BasePaymentAgent):
             
             # Update payment status
             payment.update_status(PaymentStatus.ROUTING)
-            
+
+            # Log route selection to database
+            await self._log_route_selection(payment, optimal_route)
+
             self.logger.info(
                 "Optimal route selected",
                 payment_id=payment.payment_id,
@@ -145,7 +150,7 @@ class RouteOptimizationAgent(BasePaymentAgent):
                 total_cost=payment.total_cost,
                 delivery_time=optimal_route.estimated_delivery_time
             )
-            
+
             return PaymentResult(
                 success=True,
                 payment_id=payment.payment_id,
@@ -470,11 +475,30 @@ class RouteOptimizationAgent(BasePaymentAgent):
         return filtered_routes
     
     async def _get_mmo_direct_routes(self, payment: CrossBorderPayment) -> List[PaymentRoute]:
-        """Get direct MMO routes"""
+        """Get direct MMO routes with real exchange rates from database"""
         routes = []
-        
-        # This would integrate with actual MMO APIs
-        # For now, return mock routes
+
+        # Get real exchange rate from database-backed service
+        try:
+            exchange_rate = await self.exchange_rate_service.get_exchange_rate(
+                payment.from_currency,
+                payment.to_currency
+            )
+
+            if not exchange_rate:
+                self.logger.warning(
+                    "No exchange rate available for currency pair",
+                    from_currency=payment.from_currency,
+                    to_currency=payment.to_currency
+                )
+                return routes
+
+        except Exception as e:
+            self.logger.error("Failed to get exchange rate", error=str(e))
+            return routes
+
+        # Create routes with real exchange rates
+        # This would integrate with actual MMO APIs for availability
         if payment.sender.country == Country.KENYA and payment.recipient.country == Country.UGANDA:
             routes.append(PaymentRoute(
                 from_country=payment.sender.country,
@@ -483,7 +507,7 @@ class RouteOptimizationAgent(BasePaymentAgent):
                 to_currency=payment.to_currency,
                 from_mmo=MMOProvider.MPESA,
                 to_mmo=MMOProvider.MPESA_UGANDA,
-                exchange_rate=Decimal('0.025'),
+                exchange_rate=exchange_rate,
                 fees=Decimal('2.50'),
                 estimated_delivery_time=5,  # 5 minutes
                 success_rate=0.98,
@@ -500,7 +524,7 @@ class RouteOptimizationAgent(BasePaymentAgent):
                 to_currency=payment.to_currency,
                 from_mmo=MMOProvider.MTN_MOBILE_MONEY,
                 to_mmo=MMOProvider.MPESA,
-                exchange_rate=Decimal('150.50'),  # USD to KES
+                exchange_rate=exchange_rate,  # Real rate from database
                 fees=Decimal('0.80'),  # 0.8% of amount
                 estimated_delivery_time=5,  # 5 minutes
                 success_rate=0.99,
@@ -509,7 +533,7 @@ class RouteOptimizationAgent(BasePaymentAgent):
                 reliability_score=0.99,
                 total_score=0.97
             ))
-        
+
         return routes
     
     async def _get_bank_direct_routes(self, payment: CrossBorderPayment) -> List[PaymentRoute]:
@@ -559,4 +583,56 @@ class RouteOptimizationAgent(BasePaymentAgent):
     
     async def get_available_routes(self, payment: CrossBorderPayment) -> List[PaymentRoute]:
         """Get all available routes for a payment"""
-        return await self.discover_routes(payment) 
+        return await self.discover_routes(payment)
+
+    async def _log_route_selection(self, payment: CrossBorderPayment, route: PaymentRoute):
+        """Log route selection to database for analytics"""
+        try:
+            from uuid import UUID
+            import json
+
+            async with AsyncSessionLocal() as session:
+                activity_repo = AgentActivityRepository(session)
+
+                payment_uuid = UUID(str(payment.payment_id))
+
+                # Create detailed route information
+                route_details = {
+                    "route_id": route.route_id,
+                    "from_country": str(route.from_country),
+                    "to_country": str(route.to_country),
+                    "from_currency": str(route.from_currency),
+                    "to_currency": str(route.to_currency),
+                    "exchange_rate": float(route.exchange_rate),
+                    "fees": float(route.fees),
+                    "total_score": route.total_score,
+                    "cost_score": route.cost_score,
+                    "speed_score": route.speed_score,
+                    "reliability_score": route.reliability_score,
+                    "estimated_delivery_time": route.estimated_delivery_time,
+                    "from_mmo": str(route.from_mmo) if route.from_mmo else None,
+                    "to_mmo": str(route.to_mmo) if route.to_mmo else None
+                }
+
+                await activity_repo.create(
+                    payment_id=payment_uuid,
+                    agent_type="routing",
+                    agent_id=route.route_id,
+                    action="select_route",
+                    status="success",
+                    details=json.dumps(route_details)
+                )
+
+                self.logger.debug(
+                    "Route selection logged to database",
+                    payment_id=payment.payment_id,
+                    route_id=route.route_id
+                )
+
+        except Exception as e:
+            # Log but don't fail route selection if database save fails
+            self.logger.warning(
+                "Failed to log route selection to database",
+                error=str(e),
+                payment_id=payment.payment_id
+            ) 
