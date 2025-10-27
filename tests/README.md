@@ -499,6 +499,66 @@ class TestNewFeature:
 4. **Performance Validation** - Validate performance in integration
 5. **End-to-End Validation** - Test complete workflows
 
+## 💰 **M-Pesa Integration Tests**
+
+### **Overview**
+
+Phase 3.2 introduces comprehensive M-Pesa payment integration tests:
+
+```
+tests/
+├── fixtures/
+│   ├── __init__.py
+│   └── mpesa_callbacks.py          # Sample M-Pesa callback data
+├── integration/
+│   ├── test_agent_database_integration.py
+│   └── test_mpesa_integration.py   # M-Pesa integration tests
+└── unit/
+    ├── test_payment_optimizer_agent.py
+    └── test_mpesa_repository.py    # M-Pesa repository unit tests
+```
+
+### **M-Pesa Test Coverage**
+
+- ✅ **Repository Operations** - CRUD operations for transactions and callbacks
+- ✅ **Webhook Endpoints** - STK Push, B2C, C2B, timeout callbacks
+- ✅ **Database Persistence** - Transaction and callback storage
+- ✅ **Complete Flows** - End-to-end payment lifecycles
+- ✅ **Error Scenarios** - Edge cases and failure handling
+- ✅ **70+ Test Cases** - Comprehensive coverage
+
+### **Running M-Pesa Tests**
+
+```bash
+# Run all M-Pesa tests
+pytest tests/unit/test_mpesa_repository.py tests/integration/test_mpesa_integration.py -v
+
+# Run unit tests only
+pytest tests/unit/test_mpesa_repository.py -v
+
+# Run integration tests only (requires PostgreSQL)
+pytest tests/integration/test_mpesa_integration.py -v
+
+# Run with coverage
+pytest tests/unit/test_mpesa_repository.py tests/integration/test_mpesa_integration.py \
+       --cov=applications.capp.capp.repositories.mpesa \
+       --cov=applications.capp.capp.api.v1.endpoints.webhooks \
+       --cov-report=html
+```
+
+### **M-Pesa Test Documentation**
+
+For comprehensive M-Pesa testing guide, see: [MPESA_TEST_GUIDE.md](MPESA_TEST_GUIDE.md)
+
+Topics covered:
+- Test structure and organization
+- Database setup requirements
+- Running tests and interpreting results
+- Writing new M-Pesa tests
+- Test fixtures and mock data
+- Troubleshooting common issues
+- CI/CD integration
+
 ---
 
 **🎉 The comprehensive testing suite validates that the Canza Agent Framework SDK maintains all the performance advantages of the original CAPP system!**
