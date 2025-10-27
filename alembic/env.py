@@ -18,6 +18,9 @@ from applications.capp.capp.core.database import (
     AgentActivity,
     ExchangeRate,
     ComplianceRecord,
+    MpesaTransaction,
+    MpesaCallback,
+    MMOCallback,
 )
 from applications.capp.capp.config.settings import get_settings
 
