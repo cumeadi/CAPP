@@ -1,0 +1,3 @@
+"""
+CAPP Configuration package
+"""

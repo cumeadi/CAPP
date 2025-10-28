@@ -31,7 +31,7 @@ import httpx
 from fastapi import BackgroundTasks
 from starlette.requests import Request
 
-from applications.capp.capp.core.database import AsyncSessionLocal, Base, async_engine, MMOCallback
+from applications.capp.capp.core.database import AsyncSessionLocal, Base, engine, MMOCallback
 from applications.capp.capp.services.mtn_momo_integration import (
     MTNMoMoService, MTNMoMoProduct, MTNMoMoEnvironment
 )
@@ -55,14 +55,14 @@ def event_loop():
 async def setup_database():
     """Set up test database"""
     # Create all tables
-    async with async_engine.begin() as conn:
+    async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
     yield
 
     # Cleanup
-    async with async_engine.begin() as conn:
+    async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
 

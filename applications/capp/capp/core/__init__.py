@@ -1,0 +1,3 @@
+"""
+CAPP Core package
+"""
