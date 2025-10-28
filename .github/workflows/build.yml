@@ -1,0 +1,201 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ steps.meta.outputs.version }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+        if: github.event_name != 'pull_request'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+        if: github.event_name != 'pull_request'
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+        if: github.event_name != 'pull_request'
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom
+          path: sbom.spdx.json
+        if: github.event_name != 'pull_request'
+
+  scan-dependencies:
+    name: Scan Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/python@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --file=applications/capp/requirements.txt
+
+  test-docker:
+    name: Test Docker Image
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'pull_request'
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: capp_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build test image
+        run: docker build -t capp:test .
+
+      - name: Run container health check
+        run: |
+          docker run -d --name capp-test \
+            --network host \
+            -e DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/capp_test \
+            -e REDIS_URL=redis://localhost:6379 \
+            -e ENVIRONMENT=test \
+            capp:test
+
+          # Wait for container to be healthy
+          sleep 10
+
+          # Check if container is running
+          docker ps | grep capp-test
+
+          # Check health endpoint
+          curl -f http://localhost:8000/health || exit 1
+
+      - name: Check container logs
+        if: always()
+        run: docker logs capp-test
+
+      - name: Stop container
+        if: always()
+        run: docker stop capp-test && docker rm capp-test
+
+  publish-summary:
+    name: Publish Build Summary
+    runs-on: ubuntu-latest
+    needs: [build, scan-dependencies, test-docker]
+    if: always()
+    steps:
+      - name: Create summary
+        run: |
+          cat << EOF >> $GITHUB_STEP_SUMMARY
+          # 🐳 Docker Build Summary
+
+          ## Build Results
+          - **Build**: ${{ needs.build.result == 'success' && '✅ Success' || '❌ Failed' }}
+          - **Security Scan**: ${{ needs.scan-dependencies.result == 'success' && '✅ Passed' || '⚠️ Issues Found' }}
+          - **Container Test**: ${{ needs.test-docker.result == 'success' && '✅ Passed' || '❌ Failed' }}
+
+          ## Image Tags
+          - Branch: \`${GITHUB_REF_NAME}\`
+          - Commit: \`${GITHUB_SHA:0:7}\`
+
+          ## Security
+          - Trivy vulnerability scan completed
+          - SBOM generated
+          - Dependencies scanned
+
+          ---
+          Built on: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          EOF

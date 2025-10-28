@@ -1,0 +1,146 @@
+# Docker Compose configuration for CI/CD testing
+# This file is used by GitHub Actions and local CI testing
+
+version: '3.8'
+
+services:
+  # PostgreSQL database for testing
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: capp_test
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  # CAPP application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2024-01-01}
+        VCS_REF: ${GITHUB_SHA:-local}
+        VERSION: ${VERSION:-0.1.0-ci}
+    ports:
+      - "8000:8000"
+    environment:
+      # Application
+      ENVIRONMENT: test
+      DEBUG: "false"
+
+      # Database
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/capp_test
+      DATABASE_POOL_SIZE: 10
+      DATABASE_MAX_OVERFLOW: 20
+
+      # Redis
+      REDIS_URL: redis://redis:6379
+
+      # M-Pesa (mock credentials for testing)
+      MMO_MPESA_CONSUMER_KEY: test_consumer_key
+      MMO_MPESA_CONSUMER_SECRET: test_consumer_secret
+      MMO_MPESA_BUSINESS_SHORT_CODE: "174379"
+      MMO_MPESA_PASSKEY: test_passkey
+      MPESA_ENVIRONMENT: sandbox
+
+      # MTN Mobile Money (mock credentials)
+      MTN_MOMO_SUBSCRIPTION_KEY: test_subscription_key
+      MTN_MOMO_API_USER: 00000000-0000-0000-0000-000000000000
+      MTN_MOMO_API_KEY: test_api_key
+      MTN_MOMO_ENVIRONMENT: sandbox
+
+      # Airtel Money (mock credentials)
+      AIRTEL_MONEY_CLIENT_ID: test_client_id
+      AIRTEL_MONEY_CLIENT_SECRET: test_client_secret
+      AIRTEL_MONEY_API_KEY: test_api_key
+      AIRTEL_MONEY_ENVIRONMENT: staging
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    command: >
+      sh -c "
+        echo 'Waiting for database...' &&
+        sleep 5 &&
+        echo 'Starting application...' &&
+        uvicorn applications.capp.main:app --host 0.0.0.0 --port 8000
+      "
+
+  # Test runner
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    environment:
+      # Database
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/capp_test
+      REDIS_URL: redis://redis:6379
+      ENVIRONMENT: test
+
+      # Mock MMO credentials
+      MMO_MPESA_CONSUMER_KEY: test_key
+      MMO_MPESA_CONSUMER_SECRET: test_secret
+      MMO_MPESA_BUSINESS_SHORT_CODE: "174379"
+      MMO_MPESA_PASSKEY: test_passkey
+      MTN_MOMO_SUBSCRIPTION_KEY: test_subscription_key
+      MTN_MOMO_API_USER: 00000000-0000-0000-0000-000000000000
+      MTN_MOMO_API_KEY: test_api_key
+      MTN_MOMO_ENVIRONMENT: sandbox
+      AIRTEL_MONEY_CLIENT_ID: test_client_id
+      AIRTEL_MONEY_CLIENT_SECRET: test_client_secret
+      AIRTEL_MONEY_API_KEY: test_api_key
+      AIRTEL_MONEY_ENVIRONMENT: staging
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./tests:/build/tests:ro
+      - ./applications/capp:/build/applications/capp:ro
+      - test_reports:/build/reports
+    command: >
+      sh -c "
+        echo 'Installing test dependencies...' &&
+        pip install pytest pytest-asyncio pytest-cov pytest-xdist tenacity email-validator &&
+        echo 'Running tests...' &&
+        pytest tests/integration/ -v --cov=applications.capp.capp --cov-report=xml --cov-report=html --cov-report=term-missing &&
+        echo 'Tests completed'
+      "
+    profiles:
+      - test
+
+volumes:
+  postgres_data:
+    driver: local
+  test_reports:
+    driver: local
