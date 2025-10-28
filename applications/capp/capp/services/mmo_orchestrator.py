@@ -14,6 +14,8 @@ import structlog
 
 from ..models.payments import MMOProvider, Currency, Country
 from ..services.mpesa_integration import MpesaService
+from ..services.mtn_momo_integration import MTNMoMoService, MTNMoMoProduct
+from ..services.airtel_money_integration import AirtelMoneyService
 from ..repositories.mpesa import MpesaRepository
 from ..repositories.payment import PaymentRepository
 from ..core.database import AsyncSessionLocal
@@ -94,8 +96,8 @@ class MMOOrchestrator:
 
         # Initialize MMO services
         self.mpesa_service = MpesaService(db_session=db_session)
-        # Future: self.mtn_service = MTNMoMoService(db_session=db_session)
-        # Future: self.airtel_service = AirtelMoneyService(db_session=db_session)
+        self.mtn_service = MTNMoMoService(db_session=db_session, environment="sandbox")
+        self.airtel_service = AirtelMoneyService(db_session=db_session, environment="staging")
         # Future: self.orange_service = OrangeMoneyService(db_session=db_session)
 
         # Provider availability by country
@@ -352,33 +354,168 @@ class MMOOrchestrator:
 
     async def _execute_mtn_payment(self, request: MMOPaymentRequest) -> MMOPaymentResult:
         """Execute MTN Mobile Money payment"""
-        # TODO: Implement MTN Mobile Money integration
-        self.logger.warning(
-            "MTN Mobile Money not yet implemented",
-            payment_id=request.payment_id
-        )
-        return MMOPaymentResult(
-            success=False,
-            provider=request.provider,
-            message="MTN Mobile Money integration not yet implemented",
-            error_code="NOT_IMPLEMENTED",
-            retry_possible=False
-        )
+        try:
+            self.logger.info(
+                "Executing MTN Mobile Money payment",
+                payment_id=request.payment_id,
+                transaction_type=request.transaction_type,
+                amount=request.amount
+            )
+
+            # Map currency to country code for MTN API
+            country_code_map = {
+                Country.UGANDA: "UG",
+                Country.GHANA: "GH",
+                Country.RWANDA: "RW",
+                Country.ZAMBIA: "ZM",
+                Country.NIGERIA: "NG"
+            }
+
+            # Determine transaction type and execute
+            if request.transaction_type in ["b2c", "disbursement"]:
+                # Use disbursement/transfer for B2C payments
+                result = await self.mtn_service.transfer(
+                    phone_number=request.phone_number,
+                    amount=float(request.amount),
+                    currency=str(request.currency),
+                    external_id=request.reference,
+                    payee_note=request.description,
+                    payer_message=f"Payment from CAPP: {request.description}"
+                )
+            else:
+                # Use request to pay for C2B/collection
+                result = await self.mtn_service.request_to_pay(
+                    phone_number=request.phone_number,
+                    amount=float(request.amount),
+                    currency=str(request.currency),
+                    external_id=request.reference,
+                    payer_message=request.description,
+                    payee_note=f"Payment to CAPP: {request.reference}"
+                )
+
+            # Parse result
+            if result.get("success"):
+                return MMOPaymentResult(
+                    success=True,
+                    provider=request.provider,
+                    transaction_id=result.get("reference_id"),
+                    provider_reference=result.get("external_id"),
+                    status="pending",
+                    message="MTN Mobile Money payment initiated successfully",
+                    retry_possible=False
+                )
+            else:
+                # Determine if retry is possible based on error code
+                error_code = result.get("error_code", "UNKNOWN_ERROR")
+                retry_possible = self._is_mtn_error_retryable(error_code)
+
+                return MMOPaymentResult(
+                    success=False,
+                    provider=request.provider,
+                    status="failed",
+                    message=result.get("message", "MTN Mobile Money payment failed"),
+                    error_code=error_code,
+                    retry_possible=retry_possible
+                )
+
+        except Exception as e:
+            self.logger.error(
+                "MTN Mobile Money payment error",
+                payment_id=request.payment_id,
+                error=str(e),
+                exc_info=True
+            )
+            return MMOPaymentResult(
+                success=False,
+                provider=request.provider,
+                message=f"MTN Mobile Money payment error: {str(e)}",
+                error_code="MTN_ERROR",
+                retry_possible=True
+            )
 
     async def _execute_airtel_payment(self, request: MMOPaymentRequest) -> MMOPaymentResult:
         """Execute Airtel Money payment"""
-        # TODO: Implement Airtel Money integration
-        self.logger.warning(
-            "Airtel Money not yet implemented",
-            payment_id=request.payment_id
-        )
-        return MMOPaymentResult(
-            success=False,
-            provider=request.provider,
-            message="Airtel Money integration not yet implemented",
-            error_code="NOT_IMPLEMENTED",
-            retry_possible=False
-        )
+        try:
+            self.logger.info(
+                "Executing Airtel Money payment",
+                payment_id=request.payment_id,
+                transaction_type=request.transaction_type,
+                amount=request.amount
+            )
+
+            # Map country to country code for Airtel API
+            country_code_map = {
+                Country.KENYA: "KE",
+                Country.TANZANIA: "TZ",
+                Country.UGANDA: "UG",
+                Country.RWANDA: "RW",
+                Country.ZAMBIA: "ZM",
+                Country.NIGERIA: "NG",
+                Country.GHANA: "GH",
+                Country.MALAWI: "MW"
+            }
+
+            country_code = country_code_map.get(request.country, "KE")
+
+            # Determine transaction type and execute
+            if request.transaction_type in ["b2c", "disbursement"]:
+                # Use disbursement for B2C payments
+                result = await self.airtel_service.disbursement(
+                    phone_number=request.phone_number,
+                    amount=float(request.amount),
+                    currency=str(request.currency),
+                    transaction_id=request.reference,
+                    country_code=country_code
+                )
+            else:
+                # Use push payment for other types
+                result = await self.airtel_service.push_payment(
+                    phone_number=request.phone_number,
+                    amount=float(request.amount),
+                    currency=str(request.currency),
+                    transaction_id=request.reference,
+                    country_code=country_code
+                )
+
+            # Parse result
+            if result.get("success"):
+                return MMOPaymentResult(
+                    success=True,
+                    provider=request.provider,
+                    transaction_id=result.get("transaction_id"),
+                    provider_reference=result.get("airtel_reference"),
+                    status="pending",
+                    message="Airtel Money payment initiated successfully",
+                    retry_possible=False
+                )
+            else:
+                # Determine if retry is possible based on error code
+                error_code = result.get("error_code", "UNKNOWN_ERROR")
+                retry_possible = self._is_airtel_error_retryable(error_code)
+
+                return MMOPaymentResult(
+                    success=False,
+                    provider=request.provider,
+                    status="failed",
+                    message=result.get("message", "Airtel Money payment failed"),
+                    error_code=error_code,
+                    retry_possible=retry_possible
+                )
+
+        except Exception as e:
+            self.logger.error(
+                "Airtel Money payment error",
+                payment_id=request.payment_id,
+                error=str(e),
+                exc_info=True
+            )
+            return MMOPaymentResult(
+                success=False,
+                provider=request.provider,
+                message=f"Airtel Money payment error: {str(e)}",
+                error_code="AIRTEL_ERROR",
+                retry_possible=True
+            )
 
     async def _execute_orange_payment(self, request: MMOPaymentRequest) -> MMOPaymentResult:
         """Execute Orange Money payment"""
@@ -416,6 +553,68 @@ class MMOOrchestrator:
             return False
 
         # Retryable errors include network issues, timeouts, temporary failures
+        return True
+
+    def _is_mtn_error_retryable(self, error_code: str) -> bool:
+        """Determine if MTN MoMo error is retryable"""
+        # Non-retryable errors
+        non_retryable = [
+            "AUTH_FAILED",
+            "INVALID_PHONE_NUMBER",
+            "INVALID_ACCOUNT",
+            "INSUFFICIENT_BALANCE",
+            "PAYER_NOT_FOUND",
+            "PAYEE_NOT_FOUND",
+            "NOT_ALLOWED",
+            "DUPLICATE_REQUEST"
+        ]
+
+        if error_code in non_retryable:
+            return False
+
+        # Retryable errors (timeouts, network issues, service unavailable)
+        retryable = [
+            "TIMEOUT",
+            "SERVICE_UNAVAILABLE",
+            "INTERNAL_ERROR",
+            "TEMPORARILY_UNAVAILABLE"
+        ]
+
+        if error_code in retryable:
+            return True
+
+        # Default to retry for unknown errors
+        return True
+
+    def _is_airtel_error_retryable(self, error_code: str) -> bool:
+        """Determine if Airtel Money error is retryable"""
+        # Non-retryable errors
+        non_retryable = [
+            "AUTH_FAILED",
+            "INVALID_MSISDN",
+            "INVALID_ACCOUNT",
+            "INSUFFICIENT_BALANCE",
+            "SUBSCRIBER_NOT_FOUND",
+            "NOT_ALLOWED",
+            "DUPLICATE_TRANSACTION"
+        ]
+
+        if error_code in non_retryable:
+            return False
+
+        # Retryable errors
+        retryable = [
+            "TIMEOUT",
+            "SERVICE_UNAVAILABLE",
+            "INTERNAL_ERROR",
+            "TEMPORARILY_UNAVAILABLE",
+            "SYSTEM_ERROR"
+        ]
+
+        if error_code in retryable:
+            return True
+
+        # Default to retry for unknown errors
         return True
 
     async def get_provider_availability(self, country: Country) -> list:
