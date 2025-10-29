@@ -1,0 +1,39 @@
+[bandit]
+# Bandit security linter configuration
+
+# Exclude paths
+exclude_dirs = [
+    '/tests/',
+    '/test_',
+    '/.venv/',
+    '/venv/',
+    '/env/',
+    '/build/',
+    '/dist/',
+    '/.tox/',
+    '/alembic/versions/'
+]
+
+# Test IDs to skip
+skips = [
+    'B101',  # assert_used - common in tests
+    'B601',  # paramiko_calls - if using paramiko
+]
+
+# Confidence level (HIGH, MEDIUM, LOW)
+# Only report issues with confidence level equal to or higher than this
+confidence_level = MEDIUM
+
+# Severity level (HIGH, MEDIUM, LOW)
+# Only report issues with severity level equal to or higher than this
+severity_level = LOW
+
+# Tests to run (empty = all)
+tests = []
+
+# Plugins to load
+#exclude_tests = []
+
+[bandit.assert_used]
+# Allow assert in tests
+skips = ['*/test_*.py', '*/tests/*.py']

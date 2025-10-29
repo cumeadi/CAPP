@@ -74,17 +74,31 @@ class Settings(BaseSettings):
     APTOS_ACCOUNT_ADDRESS: str = Field(default="demo-account-address", env="APTOS_ACCOUNT_ADDRESS")
     
     # Mobile Money Operators (MMO)
+    # M-Pesa
     MMO_MPESA_CONSUMER_KEY: str = Field(default="", env="MMO_MPESA_CONSUMER_KEY")
     MMO_MPESA_CONSUMER_SECRET: str = Field(default="", env="MMO_MPESA_CONSUMER_SECRET")
     MMO_MPESA_BUSINESS_SHORT_CODE: str = Field(default="", env="MMO_MPESA_BUSINESS_SHORT_CODE")
     MMO_MPESA_PASSKEY: str = Field(default="", env="MMO_MPESA_PASSKEY")
-    
+
+    # MTN Mobile Money
+    MTN_MOMO_SUBSCRIPTION_KEY: str = Field(default="", env="MTN_MOMO_SUBSCRIPTION_KEY")
+    MTN_MOMO_API_USER: str = Field(default="", env="MTN_MOMO_API_USER")
+    MTN_MOMO_API_KEY: str = Field(default="", env="MTN_MOMO_API_KEY")
+    MTN_MOMO_ENVIRONMENT: str = Field(default="sandbox", env="MTN_MOMO_ENVIRONMENT")  # sandbox or production
+
+    # Airtel Money
+    AIRTEL_MONEY_CLIENT_ID: str = Field(default="", env="AIRTEL_MONEY_CLIENT_ID")
+    AIRTEL_MONEY_CLIENT_SECRET: str = Field(default="", env="AIRTEL_MONEY_CLIENT_SECRET")
+    AIRTEL_MONEY_API_KEY: str = Field(default="", env="AIRTEL_MONEY_API_KEY")
+    AIRTEL_MONEY_ENVIRONMENT: str = Field(default="staging", env="AIRTEL_MONEY_ENVIRONMENT")  # staging or production
+
+    # Orange Money
     MMO_ORANGE_API_KEY: str = Field(default="", env="MMO_ORANGE_API_KEY")
     MMO_ORANGE_API_SECRET: str = Field(default="", env="MMO_ORANGE_API_SECRET")
-    
+
+    # Legacy (deprecated - use specific provider settings above)
     MMO_MTN_API_KEY: str = Field(default="", env="MMO_MTN_API_KEY")
     MMO_MTN_API_SECRET: str = Field(default="", env="MMO_MTN_API_SECRET")
-    
     MMO_AIRTEL_API_KEY: str = Field(default="", env="MMO_AIRTEL_API_KEY")
     MMO_AIRTEL_API_SECRET: str = Field(default="", env="MMO_AIRTEL_API_SECRET")
     

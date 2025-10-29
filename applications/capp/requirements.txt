@@ -95,4 +95,4 @@ sentry-sdk[fastapi]>=1.40.0
 locust>=2.17.0
 
 # Production Server
-gunicorn>=21.2.0 
+gunicorn>=21.2.0 tenacity>=8.2.0

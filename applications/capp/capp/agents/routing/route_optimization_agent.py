@@ -23,7 +23,10 @@ from ..models.payments import (
 from ..services.exchange_rates import ExchangeRateService
 from ..services.compliance import ComplianceService
 from ..services.mmo_availability import MMOAvailabilityService
+from ..services.mmo_orchestrator import MMOOrchestrator
 from ..core.redis import get_redis_client
+from ..core.database import AsyncSessionLocal
+from ..repositories.agent_activity import AgentActivityRepository
 
 
 logger = structlog.get_logger(__name__)
@@ -79,20 +82,21 @@ class RouteOptimizationAgent(BasePaymentAgent):
     - Compliance optimization (regulatory requirements)
     """
     
-    def __init__(self, config: RouteOptimizationConfig):
+    def __init__(self, config: RouteOptimizationConfig, db_session=None):
         super().__init__(config)
         self.config = config
-        
+
         # Services
         self.exchange_rate_service = ExchangeRateService()
         self.compliance_service = ComplianceService()
         self.mmo_availability_service = MMOAvailabilityService()
+        self.mmo_orchestrator = MMOOrchestrator(db_session=db_session)
         self.redis_client = get_redis_client()
-        
+
         # Optimization components
         self.scaler = MinMaxScaler()
         self.route_cache: Dict[str, List[PaymentRoute]] = {}
-        
+
         self.logger.info("Route optimization agent initialized")
     
     async def process_payment(self, payment: CrossBorderPayment) -> PaymentResult:
@@ -137,7 +141,10 @@ class RouteOptimizationAgent(BasePaymentAgent):
             
             # Update payment status
             payment.update_status(PaymentStatus.ROUTING)
-            
+
+            # Log route selection to database
+            await self._log_route_selection(payment, optimal_route)
+
             self.logger.info(
                 "Optimal route selected",
                 payment_id=payment.payment_id,
@@ -145,7 +152,7 @@ class RouteOptimizationAgent(BasePaymentAgent):
                 total_cost=payment.total_cost,
                 delivery_time=optimal_route.estimated_delivery_time
             )
-            
+
             return PaymentResult(
                 success=True,
                 payment_id=payment.payment_id,
@@ -470,47 +477,134 @@ class RouteOptimizationAgent(BasePaymentAgent):
         return filtered_routes
     
     async def _get_mmo_direct_routes(self, payment: CrossBorderPayment) -> List[PaymentRoute]:
-        """Get direct MMO routes"""
+        """Get direct MMO routes with real exchange rates and provider availability"""
         routes = []
-        
-        # This would integrate with actual MMO APIs
-        # For now, return mock routes
-        if payment.sender.country == Country.KENYA and payment.recipient.country == Country.UGANDA:
-            routes.append(PaymentRoute(
+
+        # Get real exchange rate from database-backed service
+        try:
+            exchange_rate = await self.exchange_rate_service.get_exchange_rate(
+                payment.from_currency,
+                payment.to_currency
+            )
+
+            if not exchange_rate:
+                self.logger.warning(
+                    "No exchange rate available for currency pair",
+                    from_currency=payment.from_currency,
+                    to_currency=payment.to_currency
+                )
+                return routes
+
+        except Exception as e:
+            self.logger.error("Failed to get exchange rate", error=str(e))
+            return routes
+
+        # Get available MMO providers for recipient country
+        try:
+            recipient_providers = await self.mmo_orchestrator.get_provider_availability(
+                payment.recipient.country
+            )
+
+            if not recipient_providers:
+                self.logger.warning(
+                    "No MMO providers available for recipient country",
+                    country=payment.recipient.country
+                )
+                return routes
+
+            # Get sender providers (for future sender-initiated payments)
+            sender_providers = await self.mmo_orchestrator.get_provider_availability(
+                payment.sender.country
+            )
+
+        except Exception as e:
+            self.logger.error("Failed to get provider availability", error=str(e))
+            return routes
+
+        # Generate routes for each available recipient provider
+        for to_provider in recipient_providers:
+            # Calculate fees based on provider (as percentage of amount)
+            provider_fees = self._get_provider_fees(to_provider, payment.amount)
+
+            # Calculate estimated delivery time based on provider
+            delivery_time = self._get_provider_delivery_time(to_provider)
+
+            # Get provider reliability metrics
+            success_rate, reliability_score = self._get_provider_reliability(to_provider)
+
+            # Create route
+            route = PaymentRoute(
                 from_country=payment.sender.country,
                 to_country=payment.recipient.country,
                 from_currency=payment.from_currency,
                 to_currency=payment.to_currency,
-                from_mmo=MMOProvider.MPESA,
-                to_mmo=MMOProvider.MPESA_UGANDA,
-                exchange_rate=Decimal('0.025'),
-                fees=Decimal('2.50'),
-                estimated_delivery_time=5,  # 5 minutes
-                success_rate=0.98,
-                cost_score=0.9,
-                speed_score=0.95,
-                reliability_score=0.98,
-                total_score=0.94
-            ))
-        elif payment.sender.country == Country.NIGERIA and payment.recipient.country == Country.KENYA:
-            routes.append(PaymentRoute(
+                from_mmo=sender_providers[0] if sender_providers else None,  # Use first available sender provider
+                to_mmo=to_provider,
+                exchange_rate=exchange_rate,
+                fees=provider_fees,
+                estimated_delivery_time=delivery_time,
+                success_rate=success_rate,
+                cost_score=0.0,  # Will be calculated during scoring
+                speed_score=0.0,  # Will be calculated during scoring
+                reliability_score=reliability_score,
+                total_score=0.0  # Will be calculated during scoring
+            )
+
+            routes.append(route)
+
+            self.logger.info(
+                "MMO route created",
                 from_country=payment.sender.country,
                 to_country=payment.recipient.country,
-                from_currency=payment.from_currency,
-                to_currency=payment.to_currency,
-                from_mmo=MMOProvider.MTN_MOBILE_MONEY,
-                to_mmo=MMOProvider.MPESA,
-                exchange_rate=Decimal('150.50'),  # USD to KES
-                fees=Decimal('0.80'),  # 0.8% of amount
-                estimated_delivery_time=5,  # 5 minutes
-                success_rate=0.99,
-                cost_score=0.95,
-                speed_score=0.98,
-                reliability_score=0.99,
-                total_score=0.97
-            ))
-        
+                provider=to_provider,
+                fees=provider_fees,
+                delivery_time=delivery_time
+            )
+
         return routes
+
+    def _get_provider_fees(self, provider: MMOProvider, amount: Decimal) -> Decimal:
+        """Get provider fees based on provider and amount"""
+        # Fee structure by provider (would come from database in production)
+        fee_structure = {
+            MMOProvider.MPESA: Decimal("0.015"),  # 1.5% of amount
+            MMOProvider.MPESA_TANZANIA: Decimal("0.015"),
+            MMOProvider.MPESA_UGANDA: Decimal("0.015"),
+            MMOProvider.MTN_MOBILE_MONEY: Decimal("0.020"),  # 2.0% of amount
+            MMOProvider.AIRTEL_MONEY: Decimal("0.018"),  # 1.8% of amount
+            MMOProvider.ORANGE_MONEY: Decimal("0.022"),  # 2.2% of amount
+        }
+
+        fee_percentage = fee_structure.get(provider, Decimal("0.025"))  # Default 2.5%
+        return amount * fee_percentage
+
+    def _get_provider_delivery_time(self, provider: MMOProvider) -> int:
+        """Get estimated delivery time in minutes for provider"""
+        # Delivery times by provider (would come from database in production)
+        delivery_times = {
+            MMOProvider.MPESA: 5,  # 5 minutes
+            MMOProvider.MPESA_TANZANIA: 5,
+            MMOProvider.MPESA_UGANDA: 5,
+            MMOProvider.MTN_MOBILE_MONEY: 10,  # 10 minutes
+            MMOProvider.AIRTEL_MONEY: 8,  # 8 minutes
+            MMOProvider.ORANGE_MONEY: 15,  # 15 minutes
+        }
+
+        return delivery_times.get(provider, 30)  # Default 30 minutes
+
+    def _get_provider_reliability(self, provider: MMOProvider) -> tuple:
+        """Get provider success rate and reliability score"""
+        # Reliability metrics by provider (would come from database in production)
+        reliability_metrics = {
+            MMOProvider.MPESA: (0.98, 0.98),  # (success_rate, reliability_score)
+            MMOProvider.MPESA_TANZANIA: (0.97, 0.97),
+            MMOProvider.MPESA_UGANDA: (0.97, 0.97),
+            MMOProvider.MTN_MOBILE_MONEY: (0.96, 0.96),
+            MMOProvider.AIRTEL_MONEY: (0.95, 0.95),
+            MMOProvider.ORANGE_MONEY: (0.94, 0.94),
+        }
+
+        return reliability_metrics.get(provider, (0.90, 0.90))  # Default 90%
     
     async def _get_bank_direct_routes(self, payment: CrossBorderPayment) -> List[PaymentRoute]:
         """Get direct bank routes"""
@@ -559,4 +653,56 @@ class RouteOptimizationAgent(BasePaymentAgent):
     
     async def get_available_routes(self, payment: CrossBorderPayment) -> List[PaymentRoute]:
         """Get all available routes for a payment"""
-        return await self.discover_routes(payment) 
+        return await self.discover_routes(payment)
+
+    async def _log_route_selection(self, payment: CrossBorderPayment, route: PaymentRoute):
+        """Log route selection to database for analytics"""
+        try:
+            from uuid import UUID
+            import json
+
+            async with AsyncSessionLocal() as session:
+                activity_repo = AgentActivityRepository(session)
+
+                payment_uuid = UUID(str(payment.payment_id))
+
+                # Create detailed route information
+                route_details = {
+                    "route_id": route.route_id,
+                    "from_country": str(route.from_country),
+                    "to_country": str(route.to_country),
+                    "from_currency": str(route.from_currency),
+                    "to_currency": str(route.to_currency),
+                    "exchange_rate": float(route.exchange_rate),
+                    "fees": float(route.fees),
+                    "total_score": route.total_score,
+                    "cost_score": route.cost_score,
+                    "speed_score": route.speed_score,
+                    "reliability_score": route.reliability_score,
+                    "estimated_delivery_time": route.estimated_delivery_time,
+                    "from_mmo": str(route.from_mmo) if route.from_mmo else None,
+                    "to_mmo": str(route.to_mmo) if route.to_mmo else None
+                }
+
+                await activity_repo.create(
+                    payment_id=payment_uuid,
+                    agent_type="routing",
+                    agent_id=route.route_id,
+                    action="select_route",
+                    status="success",
+                    details=json.dumps(route_details)
+                )
+
+                self.logger.debug(
+                    "Route selection logged to database",
+                    payment_id=payment.payment_id,
+                    route_id=route.route_id
+                )
+
+        except Exception as e:
+            # Log but don't fail route selection if database save fails
+            self.logger.warning(
+                "Failed to log route selection to database",
+                error=str(e),
+                payment_id=payment.payment_id
+            ) 

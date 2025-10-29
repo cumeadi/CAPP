@@ -2,17 +2,22 @@
 Exchange Rate Service for CAPP
 
 Handles exchange rate retrieval and currency conversion for African currencies.
+Integrates with external APIs and database for rate management.
 """
 
 import asyncio
 from typing import Optional, Dict, List
 from decimal import Decimal
+from datetime import datetime, timezone
 import aiohttp
 import structlog
 
-from .models.payments import Currency
-from .config.settings import get_settings
-from .core.redis import get_cache
+from ..models.payments import Currency
+from ..config.settings import get_settings
+from ..core.redis import get_cache
+from ..core.database import AsyncSessionLocal
+from ..repositories.exchange_rate import ExchangeRateRepository
+from .external.exchange_rate_client import get_exchange_rate_client
 
 logger = structlog.get_logger(__name__)
 
@@ -20,24 +25,35 @@ logger = structlog.get_logger(__name__)
 class ExchangeRateService:
     """
     Exchange Rate Service
-    
+
     Provides exchange rate data for African currencies with:
+    - External API integration (ExchangeRate-API.com)
+    - Database persistence for rate history
     - Multi-source rate aggregation
-    - Caching for performance
+    - Redis caching for performance
     - Fallback mechanisms
     - Rate validation
     """
-    
+
     def __init__(self):
         self.settings = get_settings()
         self.cache = get_cache()
         self.logger = structlog.get_logger(__name__)
-        
+
+        # External API client
+        self.api_client = None  # Lazily initialized
+
         # Cache TTL for exchange rates (5 minutes)
         self.cache_ttl = 300
-        
+
         # Supported currency pairs
         self.supported_pairs = self._get_supported_pairs()
+
+    async def _get_api_client(self):
+        """Get or create API client instance"""
+        if self.api_client is None:
+            self.api_client = get_exchange_rate_client()
+        return self.api_client
     
     def _get_supported_pairs(self) -> Dict[str, List[str]]:
         """Get supported currency pairs for African currencies"""
@@ -133,28 +149,47 @@ class ExchangeRateService:
             return None
     
     async def _get_rate_from_exchangerate_api(self, from_currency: Currency, to_currency: Currency) -> Optional[Decimal]:
-        """Get rate from ExchangeRate API"""
+        """Get rate from ExchangeRate-API.com and save to database"""
         try:
             if not self.settings.EXCHANGE_RATE_API_KEY:
+                self.logger.warning("Exchange Rate API key not configured")
                 return None
-            
-            url = f"{self.settings.EXCHANGE_RATE_BASE_URL}/{from_currency}"
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        rates = data.get('rates', {})
-                        rate = rates.get(to_currency)
-                        
-                        if rate:
-                            return Decimal(str(rate))
-            
+
+            # Get API client
+            api_client = await self._get_api_client()
+
+            # Fetch rate from API
+            rate = await api_client.get_rate(from_currency, to_currency)
+
+            if rate:
+                # Save to database
+                try:
+                    async with AsyncSessionLocal() as session:
+                        repo = ExchangeRateRepository(session)
+                        await repo.create(
+                            from_currency=from_currency,
+                            to_currency=to_currency,
+                            rate=rate,
+                            source="exchangerate_api",
+                            effective_at=datetime.now(timezone.utc)
+                        )
+                except Exception as db_error:
+                    # Log but don't fail if database save fails
+                    self.logger.warning(
+                        "Failed to save exchange rate to database",
+                        error=str(db_error),
+                        from_currency=from_currency,
+                        to_currency=to_currency
+                    )
+
+                return rate
+
             return None
-            
+
         except Exception as e:
             self.logger.warning("Failed to get rate from ExchangeRate API", error=str(e))
-            return None
+            # Try to get from database as fallback
+            return await self._get_rate_from_database(from_currency, to_currency)
     
     async def _get_rate_from_fixer_api(self, from_currency: Currency, to_currency: Currency) -> Optional[Decimal]:
         """Get rate from Fixer API (fallback)"""
@@ -275,32 +310,122 @@ class ExchangeRateService:
         """Get supported currency pairs for a specific currency"""
         return self.supported_pairs.get(currency, [])
     
+    async def _get_rate_from_database(self, from_currency: Currency, to_currency: Currency) -> Optional[Decimal]:
+        """Get latest rate from database (fallback when API fails)"""
+        try:
+            async with AsyncSessionLocal() as session:
+                repo = ExchangeRateRepository(session)
+                rate_record = await repo.get_latest_rate(from_currency, to_currency)
+
+                if rate_record:
+                    self.logger.info(
+                        "Using database fallback for exchange rate",
+                        from_currency=from_currency,
+                        to_currency=to_currency,
+                        rate=float(rate_record.rate),
+                        age_minutes=(datetime.now(timezone.utc) - rate_record.effective_at).total_seconds() / 60
+                    )
+                    return rate_record.rate
+
+            return None
+
+        except Exception as e:
+            self.logger.error("Failed to get rate from database", error=str(e))
+            return None
+
+    async def lock_rate_for_payment(
+        self,
+        from_currency: Currency,
+        to_currency: Currency,
+        lock_duration_minutes: int = 15
+    ) -> Optional[Decimal]:
+        """
+        Lock an exchange rate for a payment
+
+        Args:
+            from_currency: Source currency
+            to_currency: Target currency
+            lock_duration_minutes: Duration to lock the rate
+
+        Returns:
+            Locked rate or None if lock failed
+        """
+        try:
+            async with AsyncSessionLocal() as session:
+                repo = ExchangeRateRepository(session)
+                locked_rate = await repo.lock_rate(from_currency, to_currency, lock_duration_minutes)
+
+                if locked_rate:
+                    return locked_rate.rate
+
+            return None
+
+        except Exception as e:
+            self.logger.error("Failed to lock exchange rate", error=str(e))
+            return None
+
+    async def get_rate_history(
+        self,
+        from_currency: Currency,
+        to_currency: Currency,
+        limit: int = 100
+    ) -> List[Dict]:
+        """
+        Get exchange rate history from database
+
+        Args:
+            from_currency: Source currency
+            to_currency: Target currency
+            limit: Maximum number of records
+
+        Returns:
+            List of rate history records
+        """
+        try:
+            async with AsyncSessionLocal() as session:
+                repo = ExchangeRateRepository(session)
+                records = await repo.get_rate_history(from_currency, to_currency, limit=limit)
+
+                return [
+                    {
+                        "rate": float(record.rate),
+                        "source": record.source,
+                        "effective_at": record.effective_at.isoformat(),
+                        "is_locked": record.is_locked
+                    }
+                    for record in records
+                ]
+
+        except Exception as e:
+            self.logger.error("Failed to get rate history", error=str(e))
+            return []
+
     async def validate_rate(self, rate: Decimal, from_currency: Currency, to_currency: Currency) -> bool:
         """
         Validate if exchange rate is reasonable
-        
+
         Args:
             rate: Rate to validate
             from_currency: Source currency
             to_currency: Target currency
-            
+
         Returns:
             bool: True if rate is reasonable, False otherwise
         """
         try:
             # Get current market rate
             market_rate = await self.get_exchange_rate(from_currency, to_currency)
-            
+
             if market_rate is None:
                 return True  # Can't validate, assume valid
-            
+
             # Check if rate is within 10% of market rate
             tolerance = Decimal('0.1')  # 10%
             min_rate = market_rate * (1 - tolerance)
             max_rate = market_rate * (1 + tolerance)
-            
+
             is_valid = min_rate <= rate <= max_rate
-            
+
             if not is_valid:
                 self.logger.warning(
                     "Exchange rate validation failed",
@@ -309,9 +434,9 @@ class ExchangeRateService:
                     from_currency=from_currency,
                     to_currency=to_currency
                 )
-            
+
             return is_valid
-            
+
         except Exception as e:
             self.logger.error("Rate validation failed", error=str(e))
             return True  # Assume valid if validation fails 

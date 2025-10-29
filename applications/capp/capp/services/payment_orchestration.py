@@ -22,8 +22,10 @@ from .services.payment_service import PaymentService
 from .services.exchange_rates import ExchangeRateService
 from .services.compliance import ComplianceService
 from .services.mmo_availability import MMOAvailabilityService
+from .services.mmo_orchestrator import MMOOrchestrator, MMOPaymentRequest
 from .services.metrics import MetricsCollector
 from .core.redis import get_cache
+from .core.database import AsyncSessionLocal
 from .config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
@@ -44,18 +46,20 @@ class PaymentOrchestrationService:
     8. Confirmation and notifications
     """
     
-    def __init__(self):
+    def __init__(self, db_session=None):
         self.settings = get_settings()
         self.cache = get_cache()
         self.logger = structlog.get_logger(__name__)
-        
+        self.db_session = db_session
+
         # Core services
         self.payment_service = PaymentService()
         self.exchange_rate_service = ExchangeRateService()
         self.compliance_service = ComplianceService()
         self.mmo_availability_service = MMOAvailabilityService()
+        self.mmo_orchestrator = MMOOrchestrator(db_session=db_session)
         self.metrics_collector = MetricsCollector()
-        
+
         # Initialize agents
         self._initialize_agents()
     
@@ -431,40 +435,92 @@ class PaymentOrchestrationService:
             )
     
     async def _execute_mmo_payment(self, payment: CrossBorderPayment) -> PaymentResult:
-        """Execute payment through MMO"""
+        """Execute payment through MMO using MMO Orchestrator"""
         try:
+            # Check if route has MMO provider
+            if not payment.selected_route or not payment.selected_route.to_mmo:
+                return PaymentResult(
+                    success=False,
+                    payment_id=payment.payment_id,
+                    status=PaymentStatus.FAILED,
+                    message="No MMO provider in selected route",
+                    error_code="NO_MMO_PROVIDER"
+                )
+
             # Check MMO availability
-            if payment.selected_route and payment.selected_route.to_mmo:
-                mmo_available = await self.mmo_availability_service.is_available(payment.selected_route.to_mmo)
-                
-                if not mmo_available:
-                    return PaymentResult(
-                        success=False,
-                        payment_id=payment.payment_id,
-                        status=PaymentStatus.FAILED,
-                        message="MMO provider not available",
-                        error_code="MMO_UNAVAILABLE"
-                    )
-            
-            # Mock MMO execution - in real implementation, this would call actual MMO APIs
-            # Simulate processing delay
-            await asyncio.sleep(0.5)
-            
-            # Generate mock MMO transaction ID
-            mmo_tx_id = f"mmo_{payment.payment_id}_{datetime.now().timestamp()}"
-            
-            self.logger.info("MMO payment executed", payment_id=payment.payment_id, mmo_tx_id=mmo_tx_id)
-            
-            return PaymentResult(
-                success=True,
+            mmo_available = await self.mmo_availability_service.is_available(payment.selected_route.to_mmo)
+
+            if not mmo_available:
+                return PaymentResult(
+                    success=False,
+                    payment_id=payment.payment_id,
+                    status=PaymentStatus.FAILED,
+                    message="MMO provider not available",
+                    error_code="MMO_UNAVAILABLE"
+                )
+
+            # Create MMO payment request
+            mmo_request = MMOPaymentRequest(
                 payment_id=payment.payment_id,
-                status=PaymentStatus.SETTLING,
-                message="MMO payment executed successfully",
-                transaction_hash=mmo_tx_id
+                provider=payment.selected_route.to_mmo,
+                phone_number=payment.recipient.get("phone_number"),
+                amount=payment.converted_amount or payment.amount,
+                currency=payment.to_currency,
+                country=payment.recipient.get("country"),
+                reference=payment.reference_id,
+                description=payment.description or f"Payment to {payment.recipient.get('name')}",
+                transaction_type="b2c"  # Default to B2C for recipient payments
             )
-            
+
+            # Execute payment through MMO orchestrator with retry logic
+            mmo_result = await self.mmo_orchestrator.execute_payment(
+                request=mmo_request,
+                retry_on_failure=True
+            )
+
+            if mmo_result.success:
+                self.logger.info(
+                    "MMO payment executed successfully",
+                    payment_id=payment.payment_id,
+                    provider=mmo_result.provider,
+                    transaction_id=mmo_result.transaction_id
+                )
+
+                # Update payment with MMO transaction details
+                payment.mmo_transaction_id = mmo_result.transaction_id
+                payment.mmo_provider_reference = mmo_result.provider_reference
+
+                return PaymentResult(
+                    success=True,
+                    payment_id=payment.payment_id,
+                    status=PaymentStatus.SETTLING,
+                    message="MMO payment executed successfully",
+                    transaction_hash=mmo_result.transaction_id
+                )
+            else:
+                self.logger.error(
+                    "MMO payment execution failed",
+                    payment_id=payment.payment_id,
+                    provider=mmo_result.provider,
+                    error_code=mmo_result.error_code,
+                    message=mmo_result.message
+                )
+
+                return PaymentResult(
+                    success=False,
+                    payment_id=payment.payment_id,
+                    status=PaymentStatus.FAILED,
+                    message=f"MMO payment failed: {mmo_result.message}",
+                    error_code=mmo_result.error_code
+                )
+
         except Exception as e:
-            self.logger.error("MMO payment execution failed", error=str(e))
+            self.logger.error(
+                "MMO payment execution failed",
+                payment_id=payment.payment_id,
+                error=str(e),
+                exc_info=True
+            )
             return PaymentResult(
                 success=False,
                 payment_id=payment.payment_id,

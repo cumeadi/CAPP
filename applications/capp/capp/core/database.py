@@ -371,6 +371,174 @@ class ComplianceRecord(Base):
     )
 
 
+# =============================================================================
+# Mobile Money Operator (MMO) Transaction Models
+# =============================================================================
+
+class MpesaTransaction(Base):
+    """
+    M-Pesa transaction tracking.
+
+    Stores all M-Pesa STK Push, B2C, and C2B transactions with complete
+    lifecycle tracking from initiation to completion or failure.
+    """
+
+    __tablename__ = "mpesa_transactions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    payment_id = Column(UUID(as_uuid=True), ForeignKey("payments.id"), nullable=True, index=True)
+
+    # M-Pesa transaction identifiers
+    checkout_request_id = Column(String(255), unique=True, nullable=True, index=True)
+    merchant_request_id = Column(String(255), nullable=True, index=True)
+    conversation_id = Column(String(255), nullable=True, index=True)
+    originator_conversation_id = Column(String(255), nullable=True, index=True)
+    mpesa_receipt_number = Column(String(255), unique=True, nullable=True, index=True)
+
+    # Transaction type
+    transaction_type = Column(String(50), nullable=False)  # stk_push, b2c, c2b, reversal, query
+
+    # Transaction details
+    phone_number = Column(String(20), nullable=False, index=True)
+    amount = Column(Numeric(15, 2), nullable=False)
+    account_reference = Column(String(100), nullable=True)
+    transaction_desc = Column(Text, nullable=True)
+
+    # Status tracking
+    status = Column(String(50), default="pending", nullable=False, index=True)  # pending, processing, completed, failed, cancelled, timeout
+    result_code = Column(Integer, nullable=True)
+    result_description = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    # M-Pesa response data
+    transaction_date = Column(DateTime, nullable=True)
+    mpesa_balance = Column(Numeric(15, 2), nullable=True)
+
+    # Request/Response metadata
+    request_payload = Column(Text, nullable=True)  # JSON request sent to M-Pesa
+    response_payload = Column(Text, nullable=True)  # JSON response from M-Pesa
+
+    # Circuit breaker tracking
+    retry_count = Column(Integer, default=0, nullable=False)
+    last_retry_at = Column(DateTime, nullable=True)
+
+    # Timestamps
+    initiated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    callback_received_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    payment: Mapped[Optional["Payment"]] = relationship("Payment")
+    callbacks: Mapped[List["MpesaCallback"]] = relationship("MpesaCallback", back_populates="transaction", lazy="selectin")
+
+    __table_args__ = (
+        Index("idx_mpesa_tx_status_created", "status", "created_at"),
+        Index("idx_mpesa_tx_phone", "phone_number", "created_at"),
+        Index("idx_mpesa_tx_type", "transaction_type", "status"),
+        Index("idx_mpesa_tx_payment", "payment_id"),
+        CheckConstraint("amount > 0", name="check_mpesa_positive_amount"),
+    )
+
+
+class MpesaCallback(Base):
+    """
+    M-Pesa callback/webhook data storage.
+
+    Stores raw callback data from M-Pesa for audit trail, debugging,
+    and reconciliation purposes.
+    """
+
+    __tablename__ = "mpesa_callbacks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    mpesa_transaction_id = Column(UUID(as_uuid=True), ForeignKey("mpesa_transactions.id"), nullable=True, index=True)
+
+    # Callback identifiers
+    checkout_request_id = Column(String(255), nullable=True, index=True)
+    merchant_request_id = Column(String(255), nullable=True)
+
+    # Callback type
+    callback_type = Column(String(50), nullable=False)  # stk_callback, c2b_confirmation, c2b_validation, timeout, b2c_result
+
+    # Raw callback data
+    callback_data = Column(Text, nullable=False)  # JSON payload from M-Pesa
+    callback_metadata = Column(Text, nullable=True)  # Additional metadata
+
+    # Signature verification
+    signature = Column(String(500), nullable=True)
+    signature_verified = Column(Boolean, default=False, nullable=False)
+
+    # Processing status
+    processed = Column(Boolean, default=False, nullable=False)
+    processing_error = Column(Text, nullable=True)
+    processing_attempts = Column(Integer, default=0, nullable=False)
+
+    # Timestamps
+    received_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    processed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    transaction: Mapped[Optional["MpesaTransaction"]] = relationship("MpesaTransaction", back_populates="callbacks")
+
+    __table_args__ = (
+        Index("idx_mpesa_callback_processed", "processed", "received_at"),
+        Index("idx_mpesa_callback_type", "callback_type", "received_at"),
+        Index("idx_mpesa_callback_checkout", "checkout_request_id"),
+    )
+
+
+class MMOCallback(Base):
+    """
+    Universal MMO callback storage for all providers.
+
+    Generic callback storage for MTN, Airtel, Orange Money and other
+    mobile money providers. Provides a unified interface for webhook
+    processing across all MMO integrations.
+    """
+
+    __tablename__ = "mmo_callbacks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    payment_id = Column(UUID(as_uuid=True), ForeignKey("payments.id"), nullable=True, index=True)
+
+    # Provider information
+    provider = Column(String(50), nullable=False, index=True)  # mtn_momo, airtel_money, orange_money, etc.
+    provider_transaction_id = Column(String(255), nullable=False, index=True)
+    external_reference_id = Column(String(255), nullable=True, index=True)
+
+    # Callback details
+    callback_type = Column(String(50), nullable=False)  # collection, disbursement, status, timeout
+    callback_data = Column(Text, nullable=False)  # JSON payload
+    callback_metadata = Column(Text, nullable=True)
+
+    # Security
+    signature = Column(String(500), nullable=True)
+    signature_verified = Column(Boolean, default=False, nullable=False)
+    ip_address = Column(String(45), nullable=True)  # IPv6 compatible
+
+    # Processing
+    processed = Column(Boolean, default=False, nullable=False, index=True)
+    processing_error = Column(Text, nullable=True)
+    processing_attempts = Column(Integer, default=0, nullable=False)
+
+    # Timestamps
+    received_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    processed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    payment: Mapped[Optional["Payment"]] = relationship("Payment")
+
+    __table_args__ = (
+        Index("idx_mmo_callback_provider_tx", "provider", "provider_transaction_id"),
+        Index("idx_mmo_callback_processed", "processed", "received_at"),
+        Index("idx_mmo_callback_provider_type", "provider", "callback_type"),
+    )
+
+
 # Database session management
 async def get_db() -> AsyncSession:
     """
