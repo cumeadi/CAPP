@@ -10,9 +10,9 @@ from decimal import Decimal
 import aiohttp
 import structlog
 
-from .models.payments import Currency
-from .config.settings import get_settings
-from .core.redis import get_cache
+from applications.capp.capp.models.payments import Currency
+from applications.capp.capp.config.settings import get_settings
+from applications.capp.capp.core.redis import get_cache
 
 logger = structlog.get_logger(__name__)
 
@@ -189,6 +189,54 @@ class ExchangeRateService:
         except Exception as e:
             self.logger.warning("Failed to get rate from African banks", error=str(e))
             return None
+
+    async def _get_rate_from_coinmarketcap(self, from_currency: str, to_currency: str) -> Optional[Decimal]:
+        """
+        Get crypto/fiat rate from CoinMarketCap.
+        Supports getting APT/USD, BTC/NGN, etc.
+        """
+        try:
+            if not self.settings.COINMARKETCAP_API_KEY:
+                return None
+
+            url = f"{self.settings.CMC_BASE_URL}/tools/price-conversion"
+            
+            # CMC expects 'amount', 'symbol', 'convert'
+            params = {
+                "amount": "1",
+                "symbol": from_currency,
+                "convert": to_currency
+            }
+            
+            headers = {
+                "X-CMC_PRO_API_KEY": self.settings.COINMARKETCAP_API_KEY,
+                "Accept": "application/json"
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        # Path: data -> data -> quote -> [Target] -> price
+                        # CMC response format: { "data": { "symbol": "BTC", "quote": { "USD": { "price": 50000 } } } }
+                        # Note: CMC 'symbol' query returns a list or object depending on endpoint, 
+                        # price-conversion usually returns object keyed by 'id' or straight data.
+                        # Actually tools/price-conversion 'data' is a single object usually.
+                        
+                        # Let's verify structure: 
+                        # { "data": { "symbol": "APT", "amount": 1, "quote": { "USD": { "price": 10.5 } } } }
+                        
+                        quote = data.get("data", {}).get("quote", {}).get(to_currency, {})
+                        price = quote.get("price")
+                        
+                        if price:
+                            return Decimal(str(price))
+            
+            return None
+
+        except Exception as e:
+            self.logger.warning("Failed to get rate from CoinMarketCap", error=str(e))
+            return None
     
     def _is_pair_supported(self, from_currency: Currency, to_currency: Currency) -> bool:
         """Check if currency pair is supported"""
@@ -253,7 +301,8 @@ class ExchangeRateService:
             tasks = [
                 self._get_rate_from_exchangerate_api(from_currency, to_currency),
                 self._get_rate_from_fixer_api(from_currency, to_currency),
-                self._get_rate_from_african_banks(from_currency, to_currency)
+                self._get_rate_from_african_banks(from_currency, to_currency),
+                self._get_rate_from_coinmarketcap(from_currency, to_currency)
             ]
             
             results = await asyncio.gather(*tasks, return_exceptions=True)

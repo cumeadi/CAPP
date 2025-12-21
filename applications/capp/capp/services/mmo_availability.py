@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 from pydantic import BaseModel
 import structlog
 
-from .models.payments import MMOProvider
-from .config.settings import get_settings
-from .core.redis import get_cache
+from applications.capp.capp.models.payments import MMOProvider
+from applications.capp.capp.config.settings import get_settings
+from applications.capp.capp.core.redis import get_cache
 
 logger = structlog.get_logger(__name__)
 

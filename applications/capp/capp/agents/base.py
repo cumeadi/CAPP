@@ -12,15 +12,15 @@ from decimal import Decimal
 import structlog
 from pydantic import BaseModel, Field
 
-from .models.payments import (
+from applications.capp.capp.models.payments import (
     CrossBorderPayment, PaymentResult, PaymentStatus, PaymentRoute,
     Country, Currency, MMOProvider
 )
-from .config.settings import get_settings
-from .core.aptos import get_aptos_client
-from .core.database import get_database_session
-from .core.redis import get_redis_client
-from .services.metrics import MetricsCollector
+from applications.capp.capp.config.settings import get_settings
+from applications.capp.capp.core.aptos import get_aptos_client
+
+from applications.capp.capp.core.redis import get_redis_client
+from applications.capp.capp.services.metrics import MetricsCollector
 
 
 logger = structlog.get_logger(__name__)

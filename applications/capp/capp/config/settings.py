@@ -63,15 +63,27 @@ class Settings(BaseSettings):
     
     # Aptos Blockchain
     APTOS_NODE_URL: str = Field(
-        default="https://fullnode.mainnet.aptoslabs.com",
+        default="https://fullnode.testnet.aptoslabs.com/v1",
         env="APTOS_NODE_URL"
     )
     APTOS_FAUCET_URL: str = Field(
-        default="https://faucet.mainnet.aptoslabs.com",
+        default="https://faucet.testnet.aptoslabs.com",
         env="APTOS_FAUCET_URL"
     )
     APTOS_PRIVATE_KEY: str = Field(default="demo-private-key", env="APTOS_PRIVATE_KEY")
     APTOS_ACCOUNT_ADDRESS: str = Field(default="demo-account-address", env="APTOS_ACCOUNT_ADDRESS")
+    
+    # Smart Contract Address (Placeholder until deployment)
+    APTOS_CONTRACT_ADDRESS: str = Field(
+        default="0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", 
+        env="APTOS_CONTRACT_ADDRESS"
+    )
+    
+    # LiquidSwap (Pontem) DEX Address
+    LIQUIDSWAP_ADDRESS: str = Field(
+        default="0x190d44266241744264b964a37b8f09863167a12d3e70cda39376cfb4e3561e12",
+        env="LIQUIDSWAP_ADDRESS"
+    )
     
     # Mobile Money Operators (MMO)
     MMO_MPESA_CONSUMER_KEY: str = Field(default="", env="MMO_MPESA_CONSUMER_KEY")
@@ -141,6 +153,11 @@ class Settings(BaseSettings):
     USSD_PROVIDER: str = Field(default="africastalking", env="USSD_PROVIDER")
     USSD_API_KEY: str = Field(default="", env="USSD_API_KEY")
     USSD_API_SECRET: str = Field(default="", env="USSD_API_SECRET")
+
+    # Market Intelligence (CoinMarketCap)
+    COINMARKETCAP_API_KEY: str = Field(default="", env="COINMARKETCAP_API_KEY")
+    MARKET_ANALYSIS_ENABLED: bool = Field(default=True, env="MARKET_ANALYSIS_ENABLED")
+    CMC_BASE_URL: str = Field(default="https://pro-api.coinmarketcap.com/v1", env="CMC_BASE_URL")
     
     @validator("ALLOWED_ORIGINS", pre=True)
     def parse_allowed_origins(cls, v):
