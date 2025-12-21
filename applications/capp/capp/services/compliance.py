@@ -9,8 +9,9 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel
 import structlog
 
-from .models.payments import PaymentRoute, Country
-from .config.settings import get_settings
+from applications.capp.capp.models.payments import PaymentRoute, Country, CrossBorderPayment
+from applications.capp.capp.config.settings import get_settings
+from packages.intelligence.compliance.agent import AIComplianceAgent
 
 logger = structlog.get_logger(__name__)
 
@@ -23,6 +24,7 @@ class ComplianceResult(BaseModel):
     violations: List[str]
     required_actions: List[str]
     country_specific_requirements: Dict[str, List[str]]
+    reasoning: Optional[str] = None # Added for AI reasoning
 
 
 class ComplianceService:
@@ -42,6 +44,9 @@ class ComplianceService:
         
         # Load country-specific regulations
         self.country_regulations = self._load_country_regulations()
+        
+        # Initialize AI Agent
+        self.ai_agent = AIComplianceAgent()
     
     def _load_country_regulations(self) -> Dict[str, Dict]:
         """Load country-specific regulatory requirements"""
@@ -88,7 +93,7 @@ class ComplianceService:
             }
         }
     
-    async def check_route_compliance(self, route: PaymentRoute, from_country: Country, to_country: Country) -> ComplianceResult:
+    async def check_route_compliance(self, route: PaymentRoute, from_country: Country, to_country: Country, payment: Optional[CrossBorderPayment] = None) -> ComplianceResult:
         """
         Check compliance for a payment route
         
@@ -96,11 +101,28 @@ class ComplianceService:
             route: The payment route to check
             from_country: Source country
             to_country: Destination country
+            payment: The full payment object (required for AI checks)
             
         Returns:
             ComplianceResult: Compliance check result
         """
         try:
+            # If payment context is available, use AI Agent for deep analysis
+            if payment:
+                 self.logger.info("Delegating compliance check to AI Agent", payment_id=str(payment.payment_id))
+                 ai_result = await self.ai_agent.evaluate_transaction(payment)
+                 
+                 return ComplianceResult(
+                     is_compliant=ai_result.get("is_compliant", False),
+                     risk_score=ai_result.get("risk_score", 1.0),
+                     risk_level=self._determine_risk_level(ai_result.get("risk_score", 1.0)),
+                     violations=ai_result.get("violations", []),
+                     required_actions=ai_result.get("required_actions", []),
+                     country_specific_requirements={}, # Could populate if needed
+                     reasoning=ai_result.get("reasoning", "AI Analysis completed.")
+                 )
+
+            # Fallback to legacy rule-based check if no payment object
             violations = []
             required_actions = []
             risk_score = 0.0

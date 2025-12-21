@@ -15,15 +15,18 @@ from sklearn.preprocessing import MinMaxScaler
 import structlog
 from pydantic import BaseModel, Field
 
-from ..agents.base import BasePaymentAgent, AgentConfig
-from ..models.payments import (
+from applications.capp.capp.agents.base import BasePaymentAgent, AgentConfig
+from applications.capp.capp.models.payments import (
     CrossBorderPayment, PaymentResult, PaymentStatus, PaymentRoute,
     Country, Currency, MMOProvider, PaymentPreferences
 )
-from ..services.exchange_rates import ExchangeRateService
-from ..services.compliance import ComplianceService
-from ..services.mmo_availability import MMOAvailabilityService
-from ..core.redis import get_redis_client
+from applications.capp.capp.services.exchange_rates import ExchangeRateService
+from applications.capp.capp.services.compliance import ComplianceService
+from applications.capp.capp.services.mmo_availability import MMOAvailabilityService
+from applications.capp.capp.core.redis import get_redis_client
+
+# Import Intelligence Layer
+from packages.ml.inference.scorer import RLRouteScorer
 
 
 logger = structlog.get_logger(__name__)
@@ -38,7 +41,7 @@ class RouteOptimizationConfig(AgentConfig):
     optimization_timeout: float = 10.0  # seconds
     cache_ttl: int = 300  # 5 minutes
     
-    # Scoring weights
+    # Scoring weights (Still used for component scores)
     cost_weight: float = 0.4
     speed_weight: float = 0.3
     reliability_weight: float = 0.2
@@ -65,13 +68,14 @@ class RouteScore(BaseModel):
     compliance_score: float
     total_score: float
     ranking: int
+    is_rl_selected: bool = False  # New field to indicate RL selection
 
 
 class RouteOptimizationAgent(BasePaymentAgent):
     """
     Route Optimization Agent
     
-    This agent uses multi-objective optimization to find the best payment routes
+    This agent uses AI/RL to find the best payment routes
     across African countries, considering:
     - Cost optimization (fees + exchange rate spread)
     - Speed optimization (delivery time)
@@ -93,7 +97,10 @@ class RouteOptimizationAgent(BasePaymentAgent):
         self.scaler = MinMaxScaler()
         self.route_cache: Dict[str, List[PaymentRoute]] = {}
         
-        self.logger.info("Route optimization agent initialized")
+        # Initialize RL Scorer
+        self.rl_scorer = RLRouteScorer()
+        
+        self.logger.info("Route optimization agent initialized with RL engine")
     
     async def process_payment(self, payment: CrossBorderPayment) -> PaymentResult:
         """
@@ -314,7 +321,7 @@ class RouteOptimizationAgent(BasePaymentAgent):
     
     async def score_routes(self, routes: List[PaymentRoute], payment: CrossBorderPayment) -> List[RouteScore]:
         """
-        Score routes using multi-objective optimization
+        Score routes using RL-enhanced multi-objective optimization
         
         Args:
             routes: List of routes to score
@@ -328,20 +335,32 @@ class RouteOptimizationAgent(BasePaymentAgent):
         
         scored_routes = []
         
-        for route in routes:
-            # Calculate individual scores
+        # 1. Get AI selection
+        try:
+            rl_selected_idx = self.rl_scorer.select_best_route_index(payment, routes)
+        except Exception as e:
+            self.logger.error("RL prediction failed, falling back to heuristics", error=str(e))
+            rl_selected_idx = -1
+        
+        for i, route in enumerate(routes):
+            # Calculate individual component scores (keep for explainability)
             cost_score = await self._calculate_cost_score(route, payment)
             speed_score = await self._calculate_speed_score(route)
             reliability_score = await self._calculate_reliability_score(route)
             compliance_score = await self._calculate_compliance_score(route, payment)
             
-            # Calculate weighted total score
-            total_score = (
+            # Calculate base weighted total score
+            base_total_score = (
                 cost_score * self.config.cost_weight +
                 speed_score * self.config.speed_weight +
                 reliability_score * self.config.reliability_weight +
                 compliance_score * self.config.compliance_weight
             )
+            
+            is_selected = (i == rl_selected_idx)
+            
+            # If selected by RL, boost score to be top rank
+            final_total_score = 1.0 if is_selected else (base_total_score * 0.9)
             
             scored_route = RouteScore(
                 route=route,
@@ -349,8 +368,9 @@ class RouteOptimizationAgent(BasePaymentAgent):
                 speed_score=speed_score,
                 reliability_score=reliability_score,
                 compliance_score=compliance_score,
-                total_score=total_score,
-                ranking=0  # Will be set after sorting
+                total_score=final_total_score,
+                ranking=0,  # Will be set after sorting
+                is_rl_selected=is_selected
             )
             
             scored_routes.append(scored_route)
@@ -363,10 +383,11 @@ class RouteOptimizationAgent(BasePaymentAgent):
             scored_route.ranking = i + 1
         
         self.logger.info(
-            "Routes scored",
+            "Routes scored with RL",
             payment_id=payment.payment_id,
             total_routes=len(scored_routes),
-            top_score=scored_routes[0].total_score if scored_routes else 0
+            top_score=scored_routes[0].total_score if scored_routes else 0,
+            rl_selected_index=rl_selected_idx
         )
         
         return scored_routes
