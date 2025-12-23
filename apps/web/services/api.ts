@@ -21,6 +21,13 @@ export interface AgentConfig {
     network: string;
 }
 
+export interface BridgeResponse {
+    tx_hash: string;
+    status: string;
+    estimated_arrival: string;
+    bridge_fee_usd: number;
+}
+
 export const api = {
     // Wallet Operations
     getWalletBalance: async (address: string) => {
@@ -78,5 +85,43 @@ export const api = {
         });
         if (!res.ok) throw new Error('Failed to update config');
         return res.json();
+    },
+
+    // Multi-Chain Data
+    getPolygonGas: async (): Promise<{ gas_price_gwei: number }> => {
+        const res = await fetch(`${API_BASE}/chain/polygon/gas`);
+        if (!res.ok) throw new Error('Failed to fetch gas');
+        return res.json();
+    },
+
+    bridgeAssets: async (from: string, to: string, amount: number, recipient: string): Promise<BridgeResponse> => {
+        const res = await fetch(`${API_BASE}/chain/bridge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                from_chain: from,
+                to_chain: to,
+                token: "USDC",
+                amount: amount,
+                recipient: recipient
+            })
+        });
+        if (!res.ok) throw new Error('Bridge failed');
+        return res.json();
+    },
+
+    chatWithAnalyst: async (query: string): Promise<ChatResponse> => {
+        const res = await fetch(`${API_BASE}/agents/market/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+        });
+        if (!res.ok) throw new Error('Failed to chat with analyst');
+        return res.json();
     }
 };
+
+export interface ChatResponse {
+    response: string;
+    timestamp: string;
+}

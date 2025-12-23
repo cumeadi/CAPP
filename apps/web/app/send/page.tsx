@@ -11,6 +11,7 @@ export default function SendPage() {
     const [step, setStep] = useState<'INPUT' | 'CHECKING' | 'SUCCESS'>('INPUT');
     const [recipient, setRecipient] = useState('');
     const [amount, setAmount] = useState('');
+    const [targetChain, setTargetChain] = useState<'APTOS' | 'POLYGON'>('APTOS');
     const [checkResult, setCheckResult] = useState<ComplianceCheckResponse | null>(null);
     const [txHash, setTxHash] = useState('');
 
@@ -29,11 +30,20 @@ export default function SendPage() {
             setTimeout(async () => {
                 if (result.is_compliant) {
                     try {
-                        const transferRes = await api.executeTransfer(recipient, parseFloat(amount));
-                        setTxHash(transferRes.tx_hash);
+                        let txHash = "";
+                        if (targetChain === 'APTOS') {
+                            const transferRes = await api.executeTransfer(recipient, parseFloat(amount));
+                            txHash = transferRes.tx_hash;
+                        } else {
+                            // Bridge to Polygon
+                            const bridgeRes = await api.bridgeAssets("APTOS", "POLYGON", parseFloat(amount), recipient);
+                            txHash = bridgeRes.tx_hash;
+                        }
+
+                        setTxHash(txHash);
                         setStep('SUCCESS');
                     } catch (transferError) {
-                        alert("Compliance Passed but Transfer Failed. Check console.");
+                        alert("Compliance Passed but Transaction Failed. Check console.");
                         console.error(transferError);
                         setStep('INPUT');
                     }
@@ -166,7 +176,7 @@ export default function SendPage() {
                             </div>
                             <h2 className="text-2xl font-bold mb-2 text-white">Transfer Sent!</h2>
                             <p className="text-gray-400 mb-4">
-                                Your transaction has been securely settled on the Aptos network.
+                                Your transaction has been securely settled on the {targetChain === 'APTOS' ? 'Aptos' : 'Polygon'} network.
                             </p>
                             <div className="bg-white/5 p-3 rounded-lg font-mono text-xs text-gray-500 break-all mb-8">
                                 {txHash}

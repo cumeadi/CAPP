@@ -54,7 +54,7 @@ async def update_config(config: schemas.AgentConfig):
     return app_config
 
 @router.get("/market/analyze/{symbol}", response_model=schemas.MarketAnalysisResponse)
-async def analyze_market(symbol: str):
+async def analyze_market(symbol: str, db: Session = Depends(database.get_db)):
     try:
         agent = get_market_agent()
         # Mocking settlement amount generic analysis
@@ -68,11 +68,42 @@ async def analyze_market(symbol: str):
         }
         adjusted_reasoning = result.get("reasoning", "UNKNOWN") + risk_adjustment.get(app_config.risk_profile, "")
 
+        # Persist Analysis to DB
+        log_entry = models.MarketAnalysisLog(
+            symbol=symbol,
+            risk_level=result.get("risk_level", "UNKNOWN"),
+            recommendation=result.get("recommendation", "UNKNOWN"),
+            reasoning=adjusted_reasoning
+        )
+        db.add(log_entry)
+        db.commit()
+
         return schemas.MarketAnalysisResponse(
             symbol=symbol,
             risk_level=result.get("risk_level", "UNKNOWN"),
             recommendation=result.get("recommendation", "UNKNOWN"),
             reasoning=adjusted_reasoning,
+            timestamp=datetime.utcnow()
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/market/chat", response_model=schemas.ChatResponse)
+async def chat_analyst(request: schemas.ChatRequest, db: Session = Depends(database.get_db)):
+    try:
+        agent = get_market_agent()
+        response_text = await agent.chat_with_analyst(request.query)
+        
+        # Persist Chat to DB
+        chat_entry = models.AgentChatLog(
+            user_query=request.query,
+            agent_response=response_text
+        )
+        db.add(chat_entry)
+        db.commit()
+        
+        return schemas.ChatResponse(
+            response=response_text,
             timestamp=datetime.utcnow()
         )
     except Exception as e:

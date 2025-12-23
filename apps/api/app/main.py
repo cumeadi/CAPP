@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import engine, Base
-from .routers import wallet, agents
+from .routers import wallet, agents, chain_data
 
 # Create DB Tables
 Base.metadata.create_all(bind=engine)
@@ -48,6 +48,7 @@ app.add_middleware(
 
 app.include_router(wallet.router)
 app.include_router(agents.router)
+app.include_router(chain_data.router)
 
 @app.get("/")
 async def root():

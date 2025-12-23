@@ -47,3 +47,10 @@ class AgentConfig(BaseModel):
     autonomy_level: str = "HUMAN_LOOP" # HUMAN_LOOP, AUTONOMOUS
     hedge_threshold: int = 5
     network: str = "TESTNET"
+
+class ChatRequest(BaseModel):
+    query: str
+
+class ChatResponse(BaseModel):
+    response: str
+    timestamp: datetime

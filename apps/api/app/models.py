@@ -31,3 +31,22 @@ class AgentLog(Base):
     agent_type = Column(String) # 'MARKET', 'COMPLIANCE', 'LIQUIDITY'
     details = Column(String)
     action = Column(String)
+
+class MarketAnalysisLog(Base):
+    __tablename__ = "market_analysis_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    symbol = Column(String)
+    risk_level = Column(String)
+    recommendation = Column(String)
+    reasoning = Column(String)
+
+class AgentChatLog(Base):
+    __tablename__ = "agent_chat_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    user_query = Column(String)
+    agent_response = Column(String)
+
