@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Syne, DM_Mono } from "next/font/google";
 import "./globals.css";
+import { Web3Provider } from "@/providers/Web3Provider";
 
 const syne = Syne({
   variable: "--font-syne",
@@ -26,10 +27,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${syne.variable} ${dmMono.variable} antialiased`}
-      >
-        {children}
+      <body className={`${syne.variable} ${dmMono.variable} antialiased`}>
+        <Web3Provider>
+          {children}
+        </Web3Provider>
       </body>
     </html>
   );

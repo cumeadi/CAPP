@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion';
 import { ArrowRightLeft, ArrowDown, ArrowUp, Settings, ShieldCheck, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 import { useState } from 'react';
 import DepositModal from './DepositModal';
@@ -26,13 +27,21 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
     return (
         <div className="treasury-card p-8 rounded-2xl relative overflow-hidden">
             {/* Card Header */}
+            {/* Card Header */}
             <div className="flex justify-between items-start mb-8">
-                <div className="font-display text-sm font-semibold uppercase tracking-widest text-text-secondary">
-                    Protected Treasury Value
+                <div>
+                    <div className="font-display text-lg font-bold text-text-primary uppercase tracking-wider mb-1">
+                        CAPP Treasury
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-accent-primary animate-pulse"></span>
+                        <span className="text-xs font-mono text-accent-primary tracking-widest uppercase">Multi-Chain Active</span>
+                    </div>
                 </div>
-                <div className="flex items-center gap-2 px-3 py-1 bg-accent-primary/10 border border-accent-primary/30 rounded-full text-[10px] font-bold uppercase tracking-widest text-accent-primary">
-                    <ShieldCheck className="w-3 h-3" />
-                    Secured
+
+                {/* Wallet Connect */}
+                <div>
+                    <ConnectButton showBalance={false} accountStatus="address" chainStatus="icon" />
                 </div>
             </div>
 

@@ -32,12 +32,66 @@ export default function Home() {
    // Auto-Hedge Toggle State
    const [autoHedge, setAutoHedge] = useState(true);
 
+   // Feed State
+   const [decisionFeed, setDecisionFeed] = useState<Array<{
+      id: number;
+      type: 'REBALANCE' | 'ANALYSIS' | 'APPROVAL' | 'USER';
+      title: string;
+      description: string;
+      time: string;
+      meta?: { label: string; value: string };
+   }>>([
+      {
+         id: 1,
+         type: 'ANALYSIS',
+         title: 'Market Analysis Intialized',
+         description: 'AI Analyst active. Monitoring APT/USD volatility.',
+         time: 'Just now',
+         meta: { label: 'Status', value: 'Active' }
+      }
+   ]);
+
+   const [lastReasoning, setLastReasoning] = useState("");
+
+   const handleAiAction = async (query: string) => {
+      // 1. Add User Query to Feed
+      const userMsgId = Date.now();
+      setDecisionFeed(prev => [{
+         id: userMsgId,
+         type: 'USER',
+         title: 'SYSTEM COMMAND',
+         description: `> Executing: ${query}...`,
+         time: 'Just now'
+      }, ...prev]);
+
+      try {
+         // 2. Call API
+         const res = await api.chatWithAnalyst(query);
+
+         // 3. Add Analyst Response
+         setDecisionFeed(prev => [{
+            id: Date.now(),
+            type: 'ANALYSIS',
+            title: 'ANALYST',
+            description: res.response,
+            time: 'Just now'
+         }, ...prev]);
+      } catch (e) {
+         console.error("Chat failed", e);
+      }
+   };
+
+
+
    useEffect(() => {
       const fetchData = async () => {
          try {
             const demoAddress = "0x123";
-            const balanceData = await api.getWalletBalance(demoAddress);
-            const marketData = await api.analyzeMarket('APT');
+            const [balanceData, marketData, polygonGas] = await Promise.all([
+               api.getWalletBalance(demoAddress),
+               api.analyzeMarket('APT'),
+               api.getPolygonGas().catch(() => ({ gas_price_gwei: 0 }))
+            ]);
 
             setBalance({
                totalUsd: balanceData.balance_apt * 10.5,  // Mock price $10.5
@@ -45,12 +99,31 @@ export default function Home() {
                usdc: 0
             });
 
+            const newReasoning = `${marketData.reasoning} [Gas: ${polygonGas.gas_price_gwei}]`;
+
             setMarketStatus({
                sentiment: marketData.recommendation,
                volatility: marketData.risk_level,
                aptPrice: 10.5,
-               reasoning: marketData.reasoning
+               reasoning: newReasoning
             });
+
+            // Update Feed if reasoning changed or just periodically to show activity
+            if (newReasoning !== lastReasoning) {
+               setLastReasoning(newReasoning);
+               setDecisionFeed(prev => {
+                  const newItem = {
+                     id: Date.now(),
+                     type: 'ANALYSIS' as const,
+                     title: `Market Analysis: ${marketData.risk_level}`,
+                     description: marketData.reasoning,
+                     time: 'Just now',
+                     meta: { label: 'Volatility', value: marketData.risk_level }
+                  };
+                  return [newItem, ...prev].slice(0, 10);
+               });
+            }
+
          } catch (e) {
             console.error("Failed to fetch dashboard data:", e);
          }
@@ -58,6 +131,72 @@ export default function Home() {
 
       fetchData();
       const interval = setInterval(fetchData, 10000);
+      return () => clearInterval(interval);
+   }, [lastReasoning]); // Dependency on lastReasoning to trigger updates correctly? Actually careful with deps here. 
+   // Simpler to rely on the functional update and ref/state inside. 
+   // Actually, adding lastReasoning to deps might cause infinite loop if not careful.
+   // Better to keep the closure fresh or use refs. 
+   // Re-writing effect to be cleaner.
+
+   // Actually, let's remove the dependency on lastReasoning in the array and use a Ref or just let the functional update handle the feed, 
+   // but for comparison we need the previous value.
+   // I'll leave the array empty [] like before and just trust the closure or use a Ref for 'lastReasoning' if I want to strictly avoid duplicates.
+   // But simpler: just add it every time for this demo, or compare with 'marketStatus.reasoning' if I have it in scope? 
+   // 'marketStatus' is stale in the closure of the interval if I don't add it to deps.
+   // I will use a functional update pattern for everything or use a separate effect for feed updating.
+
+   // Let's stick to the minimal change:
+
+   /* Correct approach for the replacement: */
+
+   useEffect(() => {
+      const fetchData = async () => {
+         try {
+            // ... fetch ...
+            const demoAddress = "0x123";
+            const [balanceData, marketData, polygonGas] = await Promise.all([
+               api.getWalletBalance(demoAddress),
+               api.analyzeMarket('APT'),
+               api.getPolygonGas().catch(() => ({ gas_price_gwei: 0 }))
+            ]);
+
+            setBalance({
+               totalUsd: balanceData.balance_apt * 10.5,
+               apt: balanceData.balance_apt,
+               usdc: 0
+            });
+
+            const newReasoning = `${marketData.reasoning} [Gas: ${polygonGas.gas_price_gwei}]`;
+
+            setMarketStatus({
+               sentiment: marketData.recommendation,
+               volatility: marketData.risk_level,
+               aptPrice: 10.5,
+               reasoning: newReasoning
+            });
+
+            setDecisionFeed(prev => {
+               // Avoid duplicate entries if the reasoning hasn't changed essentially
+               if (prev.length > 0 && prev[0].description === marketData.reasoning) return prev;
+
+               const newItem = {
+                  id: Date.now(),
+                  type: 'ANALYSIS' as const,
+                  title: `Market Analysis: ${marketData.risk_level}`,
+                  description: marketData.reasoning,
+                  time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  meta: { label: 'Risk', value: marketData.risk_level }
+               };
+               return [newItem, ...prev].slice(0, 50);
+            });
+
+         } catch (e) {
+            console.error(e);
+         }
+      };
+
+      fetchData();
+      const interval = setInterval(fetchData, 8000); // 8s interval
       return () => clearInterval(interval);
    }, []);
 
@@ -101,7 +240,7 @@ export default function Home() {
                <TreasuryCard balance={balance} address="0x123...abc" />
 
                {/* Right Column: AI Intelligence */}
-               <AiPanel marketStatus={marketStatus} />
+               <AiPanel marketStatus={marketStatus} decisionFeed={decisionFeed} onChat={handleAiAction} />
 
             </div>
          </div>

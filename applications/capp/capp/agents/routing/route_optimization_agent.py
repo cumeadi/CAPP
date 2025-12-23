@@ -23,6 +23,7 @@ from applications.capp.capp.models.payments import (
 from applications.capp.capp.services.exchange_rates import ExchangeRateService
 from applications.capp.capp.services.compliance import ComplianceService
 from applications.capp.capp.services.mmo_availability import MMOAvailabilityService
+from applications.capp.capp.services.mmo_providers import MPesaProvider, MTNProvider, MMOStatus
 from applications.capp.capp.core.redis import get_redis_client
 
 # Import Intelligence Layer
@@ -93,6 +94,12 @@ class RouteOptimizationAgent(BasePaymentAgent):
         self.mmo_availability_service = MMOAvailabilityService()
         self.redis_client = get_redis_client()
         
+        # Real MMO Providers
+        self.providers = {
+            "MPESA": MPesaProvider(),
+            "MTN": MTNProvider()
+        }
+        
         # Optimization components
         self.scaler = MinMaxScaler()
         self.route_cache: Dict[str, List[PaymentRoute]] = {}
@@ -100,7 +107,7 @@ class RouteOptimizationAgent(BasePaymentAgent):
         # Initialize RL Scorer
         self.rl_scorer = RLRouteScorer()
         
-        self.logger.info("Route optimization agent initialized with RL engine")
+        self.logger.info("Route optimization agent initialized with Real MMO Providers and RL engine")
     
     async def process_payment(self, payment: CrossBorderPayment) -> PaymentResult:
         """
@@ -491,12 +498,21 @@ class RouteOptimizationAgent(BasePaymentAgent):
         return filtered_routes
     
     async def _get_mmo_direct_routes(self, payment: CrossBorderPayment) -> List[PaymentRoute]:
-        """Get direct MMO routes"""
+        """Get direct MMO routes using Real Providers"""
         routes = []
         
-        # This would integrate with actual MMO APIs
-        # For now, return mock routes
+        # 1. MPesa Kenya -> MPesa Uganda (Safaricom -> MTN Uganda / Airtel)
         if payment.sender.country == Country.KENYA and payment.recipient.country == Country.UGANDA:
+            provider = self.providers["MPESA"]
+            # Check availability
+            status = await provider.check_availability()
+            if status["status"] != MMOStatus.ACTIVE:
+                self.logger.warning("MPesa unavailable", status=status)
+                return []
+
+            # Calculate Real Fees
+            fees = Decimal(str(provider.calculate_fees(payment.amount)))
+            
             routes.append(PaymentRoute(
                 from_country=payment.sender.country,
                 to_country=payment.recipient.country,
@@ -504,16 +520,28 @@ class RouteOptimizationAgent(BasePaymentAgent):
                 to_currency=payment.to_currency,
                 from_mmo=MMOProvider.MPESA,
                 to_mmo=MMOProvider.MPESA_UGANDA,
-                exchange_rate=Decimal('0.025'),
-                fees=Decimal('2.50'),
-                estimated_delivery_time=5,  # 5 minutes
-                success_rate=0.98,
+                exchange_rate=Decimal('0.025'), # FX Rate (Simulated)
+                fees=fees,
+                estimated_delivery_time=5 + (status.get("latency_ms", 0) // 1000),  # Add real latency
+                success_rate=0.99,
                 cost_score=0.9,
                 speed_score=0.95,
                 reliability_score=0.98,
-                total_score=0.94
+                total_score=0.95
             ))
+            
+        # 2. MTN Nigeria -> MPesa Kenya (MoMo -> M-Pesa)
         elif payment.sender.country == Country.NIGERIA and payment.recipient.country == Country.KENYA:
+            provider = self.providers["MTN"]
+            # Check availability
+            status = await provider.check_availability()
+            if status["status"] != MMOStatus.ACTIVE:
+                self.logger.warning("MTN unavailable", status=status)
+                return []
+                
+            # Calculate Real Fees
+            fees = Decimal(str(provider.calculate_fees(payment.amount)))
+
             routes.append(PaymentRoute(
                 from_country=payment.sender.country,
                 to_country=payment.recipient.country,
@@ -522,9 +550,9 @@ class RouteOptimizationAgent(BasePaymentAgent):
                 from_mmo=MMOProvider.MTN_MOBILE_MONEY,
                 to_mmo=MMOProvider.MPESA,
                 exchange_rate=Decimal('150.50'),  # USD to KES
-                fees=Decimal('0.80'),  # 0.8% of amount
-                estimated_delivery_time=5,  # 5 minutes
-                success_rate=0.99,
+                fees=fees, 
+                estimated_delivery_time=5 + (status.get("latency_ms", 0) // 1000),
+                success_rate=0.98,
                 cost_score=0.95,
                 speed_score=0.98,
                 reliability_score=0.99,
