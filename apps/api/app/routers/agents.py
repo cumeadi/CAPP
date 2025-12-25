@@ -127,17 +127,17 @@ async def check_compliance(request: schemas.ComplianceCheckRequest):
              pass
         
         sender = SenderInfo(
-            name="Demo User", # In real app, resolved from address
+            name=request.sender_name, 
             phone_number="+1234567890",
-            country=Country.NIGERIA, # Defaulting for demo
+            country=request.sender_country, 
             address=from_address,
             kyc_verified=kyc_verified_sim
         )
         
         recipient = RecipientInfo(
-            name="External Party",
+            name=request.recipient_name,
             phone_number="+0987654321",
-            country=Country.GHANA, # Defaulting for demo
+            country=request.recipient_country, 
             address=to_address,
             kyc_verified=False
         )
@@ -164,7 +164,8 @@ async def check_compliance(request: schemas.ComplianceCheckRequest):
         return schemas.ComplianceCheckResponse(
             is_compliant=result.get("is_compliant", False),
             risk_score=result.get("risk_score", 1.0),
-            reasoning=reasoning
+            reasoning=reasoning,
+            violations=result.get("violations", [])
         )
     except Exception as e:
         print(f"Compliance Error: {e}") # Debug log

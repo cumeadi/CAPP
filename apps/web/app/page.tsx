@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useAccount } from 'wagmi';
 import TreasuryCard from '@/components/TreasuryCard';
 import AiPanel from '@/components/AiPanel';
+import TransferForm from '@/components/TransferForm';
 import { api } from '@/services/api';
 
 // Mock Data Types
@@ -16,6 +18,7 @@ interface MarketStatus {
 
 export default function Home() {
    // State
+   const { address, isConnected } = useAccount();
    const [marketStatus, setMarketStatus] = useState<MarketStatus>({
       sentiment: 'NEUTRAL',
       volatility: 'UNKNOWN',
@@ -23,10 +26,14 @@ export default function Home() {
       reasoning: "Initializing analysis..."
    });
 
+   const [view, setView] = useState<'DASHBOARD' | 'TRANSFER'>('DASHBOARD');
+   const [isAuthenticated, setIsAuthenticated] = useState(false);
+
    const [balance, setBalance] = useState({
       totalUsd: 0,
       apt: 0,
-      usdc: 0
+      usdc: 0,
+      eth: 0
    });
 
    // Auto-Hedge Toggle State
@@ -83,87 +90,22 @@ export default function Home() {
 
 
 
+
    useEffect(() => {
       const fetchData = async () => {
          try {
-            const demoAddress = "0x123";
+            const walletAddress = address || "0x123"; // Fallback to demo if not connected
             const [balanceData, marketData, polygonGas] = await Promise.all([
-               api.getWalletBalance(demoAddress),
+               api.getWalletBalance(walletAddress),
                api.analyzeMarket('APT'),
                api.getPolygonGas().catch(() => ({ gas_price_gwei: 0 }))
             ]);
 
             setBalance({
-               totalUsd: balanceData.balance_apt * 10.5,  // Mock price $10.5
+               totalUsd: (balanceData.balance_apt * 10.5) + balanceData.balance_usdc + (balanceData.balance_eth * 2800),
                apt: balanceData.balance_apt,
-               usdc: 0
-            });
-
-            const newReasoning = `${marketData.reasoning} [Gas: ${polygonGas.gas_price_gwei}]`;
-
-            setMarketStatus({
-               sentiment: marketData.recommendation,
-               volatility: marketData.risk_level,
-               aptPrice: 10.5,
-               reasoning: newReasoning
-            });
-
-            // Update Feed if reasoning changed or just periodically to show activity
-            if (newReasoning !== lastReasoning) {
-               setLastReasoning(newReasoning);
-               setDecisionFeed(prev => {
-                  const newItem = {
-                     id: Date.now(),
-                     type: 'ANALYSIS' as const,
-                     title: `Market Analysis: ${marketData.risk_level}`,
-                     description: marketData.reasoning,
-                     time: 'Just now',
-                     meta: { label: 'Volatility', value: marketData.risk_level }
-                  };
-                  return [newItem, ...prev].slice(0, 10);
-               });
-            }
-
-         } catch (e) {
-            console.error("Failed to fetch dashboard data:", e);
-         }
-      };
-
-      fetchData();
-      const interval = setInterval(fetchData, 10000);
-      return () => clearInterval(interval);
-   }, [lastReasoning]); // Dependency on lastReasoning to trigger updates correctly? Actually careful with deps here. 
-   // Simpler to rely on the functional update and ref/state inside. 
-   // Actually, adding lastReasoning to deps might cause infinite loop if not careful.
-   // Better to keep the closure fresh or use refs. 
-   // Re-writing effect to be cleaner.
-
-   // Actually, let's remove the dependency on lastReasoning in the array and use a Ref or just let the functional update handle the feed, 
-   // but for comparison we need the previous value.
-   // I'll leave the array empty [] like before and just trust the closure or use a Ref for 'lastReasoning' if I want to strictly avoid duplicates.
-   // But simpler: just add it every time for this demo, or compare with 'marketStatus.reasoning' if I have it in scope? 
-   // 'marketStatus' is stale in the closure of the interval if I don't add it to deps.
-   // I will use a functional update pattern for everything or use a separate effect for feed updating.
-
-   // Let's stick to the minimal change:
-
-   /* Correct approach for the replacement: */
-
-   useEffect(() => {
-      const fetchData = async () => {
-         try {
-            // ... fetch ...
-            const demoAddress = "0x123";
-            const [balanceData, marketData, polygonGas] = await Promise.all([
-               api.getWalletBalance(demoAddress),
-               api.analyzeMarket('APT'),
-               api.getPolygonGas().catch(() => ({ gas_price_gwei: 0 }))
-            ]);
-
-            setBalance({
-               totalUsd: balanceData.balance_apt * 10.5,
-               apt: balanceData.balance_apt,
-               usdc: 0
+               usdc: balanceData.balance_usdc || 0,
+               eth: balanceData.balance_eth || 0
             });
 
             const newReasoning = `${marketData.reasoning} [Gas: ${polygonGas.gas_price_gwei}]`;
@@ -237,7 +179,7 @@ export default function Home() {
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-8">
 
                {/* Left Column: Treasury Overview */}
-               <TreasuryCard balance={balance} address="0x123...abc" />
+               <TreasuryCard balance={balance} address={address || "Wait..."} />
 
                {/* Right Column: AI Intelligence */}
                <AiPanel marketStatus={marketStatus} decisionFeed={decisionFeed} onChat={handleAiAction} />

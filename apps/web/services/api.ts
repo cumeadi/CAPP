@@ -118,6 +118,40 @@ export const api = {
         });
         if (!res.ok) throw new Error('Failed to chat with analyst');
         return res.json();
+    },
+
+    // Bridge / Plasma
+    bridgeDeposit: async (amount: number, userAddress: string, token: string = "USDC") => {
+        const res = await fetch(`${API_BASE}/bridge/deposit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount, user_address: userAddress, token })
+        });
+        if (!res.ok) throw new Error('Deposit failed');
+        return res.json();
+    },
+
+    bridgeWithdraw: async (amount: number, userAddress: string, token: string = "USDC") => {
+        const res = await fetch(`${API_BASE}/bridge/withdraw`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount, user_address: userAddress, token })
+        });
+        if (!res.ok) throw new Error('Withdraw failed');
+        return res.json();
+    },
+
+    finalizeExit: async (exitId: string) => {
+        const res = await fetch(`${API_BASE}/bridge/finalize`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ exit_id: exitId })
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || 'Finalize failed');
+        }
+        return res.json();
     }
 };
 

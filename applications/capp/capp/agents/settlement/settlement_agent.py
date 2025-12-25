@@ -12,64 +12,30 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 import structlog
 
-from ..agents.base import BasePaymentAgent, AgentConfig
-from ..models.payments import (
-    CrossBorderPayment, PaymentResult, PaymentStatus, PaymentRoute,
+from applications.capp.capp.agents.base import BasePaymentAgent, AgentConfig
+from applications.capp.capp.models.payments import (
+    CrossBorderPayment, PaymentResult, PaymentStatus, PaymentRoute, SettlementBatch,
     Country, Currency
 )
-from ..core.aptos import get_aptos_client, AptosSettlementService
-from ..core.redis import get_cache
-from ..config.settings import get_settings
+from applications.capp.capp.core.aptos import get_aptos_client, AptosSettlementService
+from applications.capp.capp.core.polygon import PolygonSettlementService
+from applications.capp.capp.core.redis import get_cache
+from applications.capp.capp.config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
 
+# ... (Configs remain same)
+
 class SettlementConfig(AgentConfig):
-    """Configuration for settlement agent"""
-    agent_type: str = "settlement"
-    
-    # Batching settings
-    max_batch_size: int = 50
-    max_batch_wait_time: int = 30  # seconds
-    min_batch_size: int = 5
-    
-    # Transaction settings
-    max_retries: int = 3
-    retry_delay: int = 5  # seconds
-    transaction_timeout: int = 60  # seconds
-    
-    # Gas optimization
-    gas_limit: int = 1000000
-    gas_price: int = 100  # nanoaptos
-    
-    # Performance settings
-    max_concurrent_batches: int = 10
+    """Configuration for Settlement Agent"""
+    min_batch_size: int = 1
+    max_batch_size: int = 10
+    max_batch_wait_time: int = 60  # seconds
     batch_processing_interval: int = 10  # seconds
-
-
-class SettlementBatch(BaseModel):
-    """Batch of payments for settlement"""
-    batch_id: str
-    payments: List[CrossBorderPayment]
-    total_amount: Decimal
-    from_currency: Currency
-    to_currency: Currency
-    created_at: datetime
-    status: str = "pending"  # pending, processing, completed, failed
-    transaction_hash: Optional[str] = None
-    gas_used: Optional[int] = None
-    processing_time: Optional[float] = None
-
-
-class SettlementResult(BaseModel):
-    """Result of settlement operation"""
-    success: bool
-    batch_id: str
-    transaction_hash: Optional[str] = None
-    gas_used: Optional[int] = None
-    processing_time: Optional[float] = None
-    message: str
-    failed_payments: List[str] = []
+    retry_attempts: int = 3
+    retry_delay: int = 300  # seconds
+    require_finality: bool = True
 
 
 class SettlementAgent(BasePaymentAgent):
@@ -78,7 +44,7 @@ class SettlementAgent(BasePaymentAgent):
     
     Handles blockchain settlement operations:
     - Batches payments for efficient processing
-    - Submits transactions to Aptos blockchain
+    - Submits transactions to Aptos OR Polygon blockchain
     - Verifies transaction completion
     - Handles settlement failures and retries
     """
@@ -87,8 +53,16 @@ class SettlementAgent(BasePaymentAgent):
         super().__init__(config)
         self.config = config
         self.cache = get_cache()
-        self.aptos_client = get_aptos_client()
-        self.settlement_service = AptosSettlementService()
+        
+        # Initialize Chain Services
+        self.aptos_service = AptosSettlementService()
+        self.polygon_service = PolygonSettlementService()
+        
+        # Service Registry
+        self.services = {
+            "APTOS": self.aptos_service,
+            "POLYGON": self.polygon_service
+        }
         
         # Batch management
         self.pending_batches: Dict[str, SettlementBatch] = {}
@@ -272,8 +246,8 @@ class SettlementAgent(BasePaymentAgent):
                         "amount": float(p.amount),
                         "from_currency": p.from_currency,
                         "to_currency": p.to_currency,
-                        "sender": p.sender,
-                        "recipient": p.recipient,
+                        "sender": p.sender.dict(),
+                        "recipient": p.recipient.dict(),
                         "blockchain_tx_hash": p.blockchain_tx_hash
                     }
                     for p in batch.payments
@@ -283,11 +257,18 @@ class SettlementAgent(BasePaymentAgent):
                 "to_currency": batch.to_currency
             }
             
+            # Determine Chain Service
+            if batch.to_currency == "APT":
+                service = self.services["APTOS"]
+            else:
+                # Default to Polygon for MATIC, USDC, etc.
+                service = self.services["POLYGON"]
+
             # Submit to blockchain
-            tx_hash = await self.settlement_service.submit_settlement_batch(settlement_data)
+            tx_hash = await service.submit_settlement_batch(settlement_data)
             
             # Wait for transaction confirmation
-            confirmed = await self.settlement_service.wait_for_confirmation(tx_hash)
+            confirmed = await service.wait_for_confirmation(tx_hash)
             
             if not confirmed:
                 raise Exception("Transaction confirmation timeout")
@@ -338,14 +319,33 @@ class SettlementAgent(BasePaymentAgent):
         try:
             self.logger.info("Verifying settlement transaction", tx_hash=tx_hash)
             
-            # Check transaction status on blockchain
-            status = await self.settlement_service.get_transaction_status(tx_hash)
+            # 1. Try to find the batch to identify the chain
+            chain_service = None
+            for batch in list(self.completed_batches.values()) + list(self.processing_batches.values()):
+                if batch.transaction_hash == tx_hash:
+                    if batch.to_currency == "APT":
+                        chain_service = self.services["APTOS"]
+                    else:
+                        chain_service = self.services["POLYGON"]
+                    break
             
+            # 2. If found, verify on that chain
+            if chain_service:
+                status = await chain_service.get_transaction_status(tx_hash)
+            else:
+                # 3. Fallback: Try Polygon first (more likely), then Aptos
+                # Note: This is an optimization; ideally we always know the chain.
+                status = await self.services["POLYGON"].get_transaction_status(tx_hash)
+                if status != "success" and status != "failed": # If pending or unknown
+                     apt_status = await self.services["APTOS"].get_transaction_status(tx_hash)
+                     if apt_status == "success" or apt_status == "failed":
+                         status = apt_status
+
             if status == "success":
                 self.logger.info("Settlement transaction verified", tx_hash=tx_hash)
                 return True
             else:
-                self.logger.warning("Settlement transaction failed", tx_hash=tx_hash, status=status)
+                self.logger.warning("Settlement transaction failed or pending", tx_hash=tx_hash, status=status)
                 return False
                 
         except Exception as e:

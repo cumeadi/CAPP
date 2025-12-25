@@ -13,22 +13,44 @@ class MarketAnalysisResponse(BaseModel):
     reasoning: str
     timestamp: datetime
 
+# Extended Schemas for Phase 3D
+
 class ComplianceCheckRequest(BaseModel):
-    sender_address: str
-    recipient_address: str
+    # Sender Details
+    sender_name: str
+    sender_country: str
+    sender_address: Optional[str] = None
+    
+    # Recipient Details
+    recipient_name: str
+    recipient_country: str
+    recipient_address: Optional[str] = None
+    
+    # Transaction Details
     amount: float
+    currency: str = "USD"
+    payment_method: str = "BANK_TRANSFER"
 
 class ComplianceCheckResponse(BaseModel):
     is_compliant: bool
     risk_score: float
     reasoning: str
+    violations: List[str] = []
 
 # Wallet Schemas
 class TransactionRequest(BaseModel):
-    from_address: str # In real auth, derived from token
-    to_address: str
+    # Routing Details
+    from_currency: str = "USD"
+    to_currency: str = "KES"
     amount: float
-    asset: str = "APT"
+    
+    # Parties
+    recipient_name: str = "Recipient"
+    recipient_country: str = "KE"
+    recipient_address: str # Wallet address or Account Number
+    
+    # Sender (Simulated for this demo)
+    sender_id: str = "demo_user"
 
 class TransactionResponse(BaseModel):
     tx_hash: str

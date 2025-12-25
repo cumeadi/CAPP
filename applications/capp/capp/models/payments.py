@@ -102,13 +102,28 @@ class Currency(str, Enum):
     SDG = "SDG"  # Sudanese Pound
     
     # Others
-    USD = "USD"  # US Dollar
-    EUR = "EUR"  # Euro
-    GBP = "GBP"  # British Pound
+    USD = "USD"
+    EUR = "EUR"
+    GBP = "GBP"
+
+    # Crypto
+    APT = "APT"
+    MATIC = "MATIC"
+    USDC = "USDC"
+    ETH = "ETH"
 
 
 class Country(str, Enum):
-    """Supported African countries"""
+    """Supported countries"""
+    # North America
+    UNITED_STATES = "US"
+    CANADA = "CA"
+
+    # Europe
+    UNITED_KINGDOM = "GB"
+    FRANCE = "FR"
+    GERMANY = "DE"
+
     # West Africa
     NIGERIA = "NG"
     GHANA = "GH"
@@ -378,12 +393,12 @@ class PaymentResult(BaseModel):
 
 class PaymentBatch(BaseModel):
     """Batch payment model for bulk operations"""
-    batch_id: UUID = Field(default_factory=uuid4)
+    batch_id: str = Field(default_factory=lambda: str(uuid4()))
     payments: List[CrossBorderPayment]
     total_amount: Decimal
     total_fees: Decimal
     currency: Currency
-    status: PaymentStatus = PaymentStatus.PENDING
+    status: str = "pending" # pending, processing, completed, failed
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
     
@@ -393,6 +408,14 @@ class PaymentBatch(BaseModel):
             Decimal: str,
             datetime: lambda v: v.isoformat()
         }
+
+class SettlementBatch(PaymentBatch):
+    """Extended batch model for blockchain settlement"""
+    transaction_hash: Optional[str] = None
+    processing_time: Optional[float] = None
+    gas_used: Optional[int] = None
+    from_currency: Optional[Currency] = None
+    to_currency: Optional[Currency] = None
 
 
 class PaymentAnalytics(BaseModel):

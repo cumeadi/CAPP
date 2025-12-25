@@ -9,12 +9,14 @@ import { useState } from 'react';
 import DepositModal from './DepositModal';
 import WithdrawModal from './WithdrawModal';
 import SettingsModal from './SettingsModal';
+import BridgeModal from './BridgeModal';
 
 interface TreasuryCardProps {
     balance: {
         totalUsd: number;
         apt: number;
         usdc: number;
+        eth: number;
     };
     address: string;
 }
@@ -23,6 +25,7 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
     const [isDepositOpen, setIsDepositOpen] = useState(false);
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isBridgeOpen, setIsBridgeOpen] = useState(false);
 
     return (
         <div className="treasury-card p-8 rounded-2xl relative overflow-hidden">
@@ -73,7 +76,7 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
                 </div>
                 <div className="p-4 bg-bg-tertiary border border-border-subtle rounded-xl hover:border-accent-primary transition-colors group">
                     <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">ETH</div>
-                    <div className="font-display text-xl font-semibold mb-1">$8,036</div>
+                    <div className="font-display text-xl font-semibold mb-1">{balance.eth.toLocaleString('en-US', { maximumFractionDigits: 2 })} ETH</div>
                     <div className="text-xs text-text-secondary">1% • Reserve</div>
                 </div>
             </div>
@@ -94,10 +97,13 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
                     <ArrowUp className="w-4 h-4" />
                     Withdraw
                 </button>
-                <Link href="/send" className="flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-sm font-bold uppercase tracking-wide btn-gradient transition-all">
+                <button
+                    onClick={() => setIsBridgeOpen(true)}
+                    className="flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-sm font-bold uppercase tracking-wide btn-gradient transition-all text-bg-primary"
+                >
                     <ArrowRightLeft className="w-4 h-4" />
-                    Transfer
-                </Link>
+                    Bridge
+                </button>
                 <button
                     onClick={() => setIsSettingsOpen(true)}
                     className="flex items-center justify-center gap-2 px-6 py-4 bg-bg-secondary border border-border-medium rounded-xl text-sm font-medium uppercase tracking-wide hover:border-accent-primary hover:text-accent-primary transition-all text-text-secondary"
@@ -110,6 +116,7 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
             <DepositModal isOpen={isDepositOpen} onClose={() => setIsDepositOpen(false)} address={address} />
             <WithdrawModal isOpen={isWithdrawOpen} onClose={() => setIsWithdrawOpen(false)} />
             <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+            <BridgeModal isOpen={isBridgeOpen} onClose={() => setIsBridgeOpen(false)} address={address} />
         </div>
     );
 }

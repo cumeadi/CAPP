@@ -12,13 +12,14 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 import structlog
 
-from ..agents.base import BasePaymentAgent, AgentConfig
-from ..models.payments import (
+from .strategies import AdaptiveLiquidityStrategy
+from applications.capp.capp.agents.base import BasePaymentAgent, AgentConfig
+from applications.capp.capp.models.payments import (
     CrossBorderPayment, PaymentResult, PaymentStatus, PaymentRoute,
     Country, Currency
 )
-from ..core.redis import get_cache
-from ..config.settings import get_settings
+from applications.capp.capp.core.redis import get_cache
+from applications.capp.capp.config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -97,6 +98,9 @@ class LiquidityAgent(BasePaymentAgent):
         # Liquidity pools cache
         self.liquidity_pools: Dict[str, LiquidityPool] = {}
         self.active_reservations: Dict[str, LiquidityReservation] = {}
+        
+        # Strategy
+        self.strategy = AdaptiveLiquidityStrategy(base_buffer=Decimal("50000.00")) # Lower default for testing
         
         # Initialize default pools
         self._initialize_default_pools()
@@ -502,11 +506,15 @@ class LiquidityAgent(BasePaymentAgent):
             pools_to_rebalance = []
             
             for pool in self.liquidity_pools.values():
-                # Check if utilization is too high or too low
-                if pool.utilization_rate > self.config.max_liquidity_utilization:
-                    pools_to_rebalance.append((pool, "high_utilization"))
-                elif pool.utilization_rate < self.config.min_liquidity_threshold:
-                    pools_to_rebalance.append((pool, "low_utilization"))
+                # Check Strategy
+                action = self.strategy.evaluate(pool.pool_id, pool.available_liquidity)
+                
+                if action.should_rebalance:
+                    pools_to_rebalance.append((pool, action.reason))
+                elif pool.utilization_rate > self.config.max_liquidity_utilization:
+                     # Keep old check for high utilization purely for completeness, 
+                     # though strategy might cover it if we added logic there.
+                     pools_to_rebalance.append((pool, "high_utilization"))
             
             # Perform rebalancing
             for pool, reason in pools_to_rebalance:
@@ -518,43 +526,56 @@ class LiquidityAgent(BasePaymentAgent):
             self.logger.error("Liquidity rebalancing failed", error=str(e))
     
     async def _rebalance_pool(self, pool: LiquidityPool, reason: str):
-        """Rebalance a specific liquidity pool"""
+        """Rebalance a specific liquidity pool using Adaptive Strategy"""
         try:
+            # 1. Update strategy with current usage (simulated usage since we don't have full history here yet)
+            # In a real app, this would happen in process_payment specific to that pool
+            self.strategy.record_usage(pool.pool_id, pool.reserved_liquidity)
+            
+            # 2. Evaluate Strategy
+            action = self.strategy.evaluate(pool.pool_id, pool.available_liquidity)
+            
             self.logger.info(
-                "Rebalancing pool",
+                "Evaluated rebalancing strategy",
                 pool_id=pool.pool_id,
-                reason=reason,
-                current_utilization=pool.utilization_rate
+                available=pool.available_liquidity,
+                should_rebalance=action.should_rebalance,
+                action=action.action_type,
+                reason=action.reason
             )
             
-            # Mock rebalancing logic
-            # In real implementation, this would:
-            # 1. Calculate optimal liquidity distribution
-            # 2. Execute transfers between pools
-            # 3. Update pool balances
-            
-            # Simulate rebalancing delay
-            await asyncio.sleep(1.0)
+            if not action.should_rebalance:
+                return
+
+            self.logger.info(
+                "Initiating Rebalancing Action",
+                type=action.action_type,
+                amount=action.amount_needed,
+                pool=pool.pool_id
+            )
             
             # Update pool status
             pool.status = "rebalancing"
             pool.last_updated = datetime.now(timezone.utc)
             
-            # Simulate rebalancing completion
+            # Simulate rebalancing execution (Swap)
+            # In Phase 5, this will call SettlementAgent.execute_swap()
             await asyncio.sleep(2.0)
             
-            # Reset pool status
+            # Apply rebalanced funds
+            pool.available_liquidity += action.amount_needed
             pool.status = "active"
             pool.last_updated = datetime.now(timezone.utc)
             
             self.logger.info(
-                "Pool rebalancing completed",
+                "Pool rebalanced successfully",
                 pool_id=pool.pool_id,
-                new_utilization=pool.utilization_rate
+                new_balance=pool.available_liquidity
             )
             
         except Exception as e:
             self.logger.error("Pool rebalancing failed", pool_id=pool.pool_id, error=str(e))
+            pool.status = "active" # Reset status on error
     
     async def get_pool_status(self, pool_id: str) -> Optional[LiquidityPool]:
         """Get liquidity pool status"""
