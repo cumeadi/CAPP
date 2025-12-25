@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     APTOS_ACCOUNT_ADDRESS: str = Field(default="demo-account-address", env="APTOS_ACCOUNT_ADDRESS")
     
     # Smart Contract Address (Placeholder until deployment)
+    # EVM RPCs (Base & Arbitrum)
+    BASE_RPC_URL: str = Field(default="https://base-mainnet.g.alchemy.com/v2/FX7-uiaeRx_TaEyI2HGC0", env="BASE_RPC_URL")
+    ARBITRUM_RPC_URL: str = Field(default="https://arb-mainnet.g.alchemy.com/v2/FX7-uiaeRx_TaEyI2HGC0", env="ARBITRUM_RPC_URL")
+    
+    # Private Key for EVM transactions (Base/Arbitrum)
+    EVM_PRIVATE_KEY: str = Field(default="0x0000000000000000000000000000000000000000000000000000000000000001", env="EVM_PRIVATE_KEY")
     APTOS_CONTRACT_ADDRESS: str = Field(
         default="0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", 
         env="APTOS_CONTRACT_ADDRESS"
@@ -166,6 +172,10 @@ class Settings(BaseSettings):
     COINMARKETCAP_API_KEY: str = Field(default="", env="COINMARKETCAP_API_KEY")
     MARKET_ANALYSIS_ENABLED: bool = Field(default=True, env="MARKET_ANALYSIS_ENABLED")
     CMC_BASE_URL: str = Field(default="https://pro-api.coinmarketcap.com/v1", env="CMC_BASE_URL")
+    
+    # AI Providers
+    GEMINI_API_KEY: Optional[str] = Field(default=None, env="GEMINI_API_KEY")
+    GEMINI_MODEL: str = Field(default="gemini-2.0-flash", env="GEMINI_MODEL")
     
     @validator("ALLOWED_ORIGINS", pre=True)
     def parse_allowed_origins(cls, v):

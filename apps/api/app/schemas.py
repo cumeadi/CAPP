@@ -51,6 +51,9 @@ class TransactionRequest(BaseModel):
     
     # Sender (Simulated for this demo)
     sender_id: str = "demo_user"
+    
+    # Optional Routing
+    target_chain: Optional[str] = None
 
 class TransactionResponse(BaseModel):
     tx_hash: str

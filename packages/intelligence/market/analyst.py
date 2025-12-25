@@ -130,4 +130,4 @@ class MarketAnalysisAgent:
             prompt=query,
             system_prompt=system_prompt
         )
-        return response
+        return response.content

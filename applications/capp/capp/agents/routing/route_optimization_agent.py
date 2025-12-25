@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from applications.capp.capp.agents.base import BasePaymentAgent, AgentConfig
 from applications.capp.capp.models.payments import (
     CrossBorderPayment, PaymentResult, PaymentStatus, PaymentRoute,
-    Country, Currency, MMOProvider, PaymentPreferences
+    Country, Currency, MMOProvider, PaymentPreferences, Chain, BridgeProvider
 )
 from applications.capp.capp.services.exchange_rates import ExchangeRateService
 from applications.capp.capp.services.compliance import ComplianceService
@@ -608,4 +608,165 @@ class RouteOptimizationAgent(BasePaymentAgent):
     
     async def get_available_routes(self, payment: CrossBorderPayment) -> List[PaymentRoute]:
         """Get all available routes for a payment"""
-        return await self.discover_routes(payment) 
+        return await self.discover_routes(payment)
+
+    async def discover_routes(self, payment: CrossBorderPayment) -> List[PaymentRoute]:
+        """
+        Discover all available payment routes including Cross-Chain Bridges
+        """
+        routes = []
+        
+        # 1. Standard MMO Routes
+        if self.config.enable_direct_routes:
+            direct_routes = await self._discover_direct_routes(payment)
+            routes.extend(direct_routes)
+            
+        # 2. Cross-Chain Bridge Routes (New Logic)
+        # Trigger condition: If metadata contains 'target_chain'
+        target_chain = payment.metadata.get("target_chain")
+        if target_chain:
+            try:
+                # Parse target chain string to Enum
+                target_chain_enum = Chain(target_chain)
+                bridge_routes = await self._discover_bridge_routes(payment, target_chain_enum)
+                routes.extend(bridge_routes)
+            except ValueError:
+                self.logger.warning(f"Invalid target chain: {target_chain}")
+            
+        return routes
+
+    async def _discover_bridge_routes(self, payment: CrossBorderPayment, target_chain: Chain) -> List[PaymentRoute]:
+        """Discover routes via Bridges (Real + Mock Fallback)"""
+        routes = []
+        
+        # 1. Try Real Li.Fi Provider first (EVM-EVM)
+        from applications.capp.capp.services.bridge_service import bridge_provider
+        
+        # Determine Source Chain (Logic to be expanded, currently assumes APTOS or passed in payment)
+        # For this phase, we look at payment.from_currency/metadata or default to APTOS
+        # But to test Real Integration, we need a way to specify Source Chain in Payment
+        source_chain = payment.metadata.get("source_chain")
+        if not source_chain:
+             source_chain = Chain.APTOS # Default behavior as per original design
+        else:
+             try:
+                 source_chain = Chain(source_chain)
+             except ValueError:
+                 source_chain = Chain.APTOS
+
+        # Try Mock Aggregator for Aptos (since Li.Fi doesn't support it)
+        if source_chain == Chain.APTOS or target_chain == Chain.APTOS:
+            aggregator = MockBridgeAggregator()
+            quotes = await aggregator.get_quotes(source_chain, target_chain, payment.amount)
+            # ... process mock quotes ...
+            # (Reuse existing logic below)
+            for quote in quotes:
+                route = PaymentRoute(
+                    from_country=payment.sender.country,
+                    to_country=payment.recipient.country,
+                    from_currency=payment.from_currency,
+                    to_currency=payment.to_currency,
+                    from_chain=source_chain,
+                    to_chain=target_chain,
+                    bridge_provider=quote["provider"],
+                    fees=quote["fee_usd"],
+                    bridge_fee_usd=quote["fee_usd"],
+                    gas_cost_usd=quote["gas_cost_usd"],
+                    estimated_duration_seconds=quote["eta_seconds"],
+                    estimated_delivery_time=quote["eta_seconds"] // 60,
+                    exchange_rate=Decimal("1.0"),
+                    success_rate=0.99,
+                    cost_score=0.9,
+                    speed_score=0.9,
+                    reliability_score=0.9,
+                    total_score=0.0
+                )
+                routes.append(route)
+            return routes
+
+        # 2. Real Li.Fi Execution (EVM -> EVM)
+        # We need token addresses. For V1, we use Hardcoded USDC map in Service.
+        # In production, we'd lookup token from Registry based on Currency.
+        
+        # Assuming USDC for now
+        from_token_symbol = payment.from_currency.value 
+        # We don't have token address here easily without a TokenService.
+        # The BridgeService has a small map for USDC. Let's rely on that defaults if token not provided.
+        # Or pass "USDC" and let BridgeService handle it? 
+        # BridgeService expects address.
+        
+        # For this integration proof: Check if it's Base->Arb
+        if source_chain in [Chain.BASE, Chain.ARBITRUM] and target_chain in [Chain.BASE, Chain.ARBITRUM]:
+             # Use the map from BridgeService (Need to expose or duplicate)
+             from applications.capp.capp.services.bridge_service import LiFiBridgeProvider
+             # Quick Hack: Import class to access TOKENS map or use instance
+             token_map = LiFiBridgeProvider.TOKENS
+             from_token_address = token_map.get(source_chain)
+             
+             if from_token_address:
+                 # Fetch Real Quote
+                 wallet = payment.sender.address or "0x5555555555555555555555555555555555555555"
+                 quote = await bridge_provider.get_quote(source_chain, target_chain, from_token_address, payment.amount, wallet)
+                 
+                 if quote:
+                     real_route = PaymentRoute(
+                        from_country=payment.sender.country,
+                        to_country=payment.recipient.country,
+                        from_currency=payment.from_currency,
+                        to_currency=payment.to_currency,
+                        from_chain=source_chain,
+                        to_chain=target_chain,
+                        bridge_provider=BridgeProvider.LI_FI,  # Need to add LI_FI to Enum or use string match
+                        fees=quote.fee_usd,
+                        bridge_fee_usd=quote.fee_usd,
+                        gas_cost_usd=quote.gas_cost_usd,
+                        estimated_duration_seconds=quote.estimated_duration_seconds,
+                        estimated_delivery_time=max(1, quote.estimated_duration_seconds // 60),
+                        exchange_rate=Decimal("1.0"),
+                        success_rate=0.95,
+                        cost_score=0.95,
+                        speed_score=0.95,
+                        reliability_score=0.95,
+                        total_score=0.0
+                     )
+                     routes.append(real_route)
+                     return routes
+
+        return routes
+        
+        # Fallback to Mock if Real failed or no route found
+        # (Already handled by the Aptos check above, or returns empty list)
+
+
+class MockBridgeAggregator:
+    """Mock aggregator for bridge quotes (simulating Li.Fi / Socket)"""
+    
+    async def get_quotes(self, from_chain: Chain, to_chain: Chain, amount: Decimal) -> List[Dict]:
+        """Get simulated bridge quotes"""
+        quotes = []
+        
+        # 1. Stargate (Cheap, Medium Speed)
+        quotes.append({
+            "provider": BridgeProvider.STARGATE,
+            "fee_usd": Decimal("0.50"),
+            "eta_seconds": 120,  # 2 mins
+            "gas_cost_usd": Decimal("0.10")
+        })
+        
+        # 2. Across (Fast, Medium Cost)
+        quotes.append({
+            "provider": BridgeProvider.ACROSS,
+            "fee_usd": Decimal("0.80"),
+            "eta_seconds": 30,  # 30 seconds
+            "gas_cost_usd": Decimal("0.15")
+        })
+        
+        # 3. Hop (Reliable, Slower)
+        quotes.append({
+            "provider": BridgeProvider.HOP,
+            "fee_usd": Decimal("0.30"),
+            "eta_seconds": 300,  # 5 mins
+            "gas_cost_usd": Decimal("0.12")
+        })
+        
+        return quotes 

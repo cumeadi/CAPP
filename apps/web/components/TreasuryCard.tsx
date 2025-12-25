@@ -17,6 +17,8 @@ interface TreasuryCardProps {
         apt: number;
         usdc: number;
         eth: number;
+        baseUsdc: number;
+        arbitrumUsdc: number;
     };
     address: string;
 }
@@ -63,21 +65,35 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
             </div>
 
             {/* Asset Allocation Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
                 <div className="p-4 bg-bg-tertiary border border-border-subtle rounded-xl hover:border-accent-primary transition-colors group">
-                    <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">USDC</div>
-                    <div className="font-display text-xl font-semibold mb-1">${(balance.totalUsd * 0.9).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
-                    <div className="text-xs text-text-secondary">90% • Stable</div>
+                    <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">Aptos USDC</div>
+                    <div className="font-display text-xl font-semibold mb-1">${(balance.usdc).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+                    <div className="text-xs text-text-secondary">Hub • Liquid</div>
+                </div>
+                <div className="p-4 bg-bg-tertiary border border-border-subtle rounded-xl hover:border-accent-primary transition-colors group">
+                    <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">Base USDC</div>
+                    <div className="font-display text-xl font-semibold mb-1">${(balance.baseUsdc || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+                    <div className="text-xs text-text-secondary">L2 • Spending</div>
                 </div>
                 <div className="p-4 bg-bg-tertiary border border-border-subtle rounded-xl hover:border-accent-primary transition-colors group">
                     <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">APT</div>
                     <div className="font-display text-xl font-semibold mb-1">${balance.apt.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
-                    <div className="text-xs text-text-secondary">9% • Growth</div>
+                    <div className="text-xs text-text-secondary">Gas • Staked</div>
                 </div>
-                <div className="p-4 bg-bg-tertiary border border-border-subtle rounded-xl hover:border-accent-primary transition-colors group">
-                    <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">ETH</div>
-                    <div className="font-display text-xl font-semibold mb-1">{balance.eth.toLocaleString('en-US', { maximumFractionDigits: 2 })} ETH</div>
-                    <div className="text-xs text-text-secondary">1% • Reserve</div>
+                <div className="p-4 bg-bg-tertiary border border-border-subtle rounded-xl hover:border-color-success transition-colors group relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-1">
+                        <div className="flex items-center gap-1 bg-color-success/10 text-color-success px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide">
+                            <TrendingUp className="w-3 h-3" />
+                            5.2% APY
+                        </div>
+                    </div>
+                    <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">Arbitrum</div>
+                    <div className="font-display text-xl font-semibold mb-1">${(balance.arbitrumUsdc || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+                    <div className="text-xs text-text-secondary flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-color-success animate-pulse"></span>
+                        Aave V3 Strategy
+                    </div>
                 </div>
             </div>
 

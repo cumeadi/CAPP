@@ -11,6 +11,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 
 from packages.intelligence.market.analyst import MarketAnalysisAgent
 from packages.intelligence.compliance.agent import AIComplianceAgent
+from packages.intelligence.core.gemini_provider import GeminiProvider
+from applications.capp.capp.config.settings import settings
 from applications.capp.capp.models.payments import (
     CrossBorderPayment, SenderInfo, RecipientInfo, 
     PaymentType, PaymentMethod, Currency, Country
@@ -34,7 +36,17 @@ app_config = schemas.AgentConfig()
 def get_market_agent():
     global _market_agent
     if not _market_agent:
-        _market_agent = MarketAnalysisAgent()
+        # Check for Gemini Key
+        if settings.GEMINI_API_KEY:
+            try:
+                provider = GeminiProvider(api_key=settings.GEMINI_API_KEY, model_name=settings.GEMINI_MODEL)
+                _market_agent = MarketAnalysisAgent(provider=provider)
+                print("Market Agent initialized with Real Gemini Provider")
+            except Exception as e:
+                print(f"Failed to init Gemini: {e}")
+                _market_agent = MarketAnalysisAgent() # Fallback to Mock
+        else:
+            _market_agent = MarketAnalysisAgent() # Default Mock
     return _market_agent
 
 def get_compliance_agent():
