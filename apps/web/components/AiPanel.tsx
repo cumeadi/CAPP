@@ -75,33 +75,34 @@ export default function AiPanel({ marketStatus, decisionFeed, onChat }: AiPanelP
                         </div>
                     ))}
 
-                    {/* AI Actions Overlay */}
-                    <div className="sticky bottom-0 bg-bg-secondary/95 backdrop-blur-md p-3 border-t border-border-subtle mt-4">
-                        <div className="grid grid-cols-2 gap-2">
-                            <button
-                                onClick={() => onChat("Analyze current portfolio risks and suggest hedging actions")}
-                                className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-bg-tertiary hover:bg-bg-card border border-border-medium hover:border-accent-primary transition-all text-xs font-medium text-text-secondary hover:text-text-primary group"
-                            >
-                                <ShieldCheck className="w-3.5 h-3.5 text-accent-warning group-hover:scale-110 transition-transform" />
-                                Risk Check
-                            </button>
+                </div>
 
-                            <button
-                                onClick={() => onChat("Forecast yield opportunities for the next 24 hours")}
-                                className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-bg-tertiary hover:bg-bg-card border border-border-medium hover:border-accent-primary transition-all text-xs font-medium text-text-secondary hover:text-text-primary group"
-                            >
-                                <Radar className="w-3.5 h-3.5 text-color-info group-hover:scale-110 transition-transform" />
-                                Yield Scan
-                            </button>
+                {/* AI Actions Footer */}
+                <div className="mt-auto pt-4 border-t border-border-subtle bg-bg-secondary z-10">
+                    <div className="grid grid-cols-2 gap-2">
+                        <button
+                            onClick={() => onChat("Analyze current portfolio risks and suggest hedging actions")}
+                            className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-bg-tertiary hover:bg-bg-card border border-border-medium hover:border-accent-primary transition-all text-xs font-medium text-text-secondary hover:text-text-primary group"
+                        >
+                            <ShieldCheck className="w-3.5 h-3.5 text-accent-warning group-hover:scale-110 transition-transform" />
+                            Risk Check
+                        </button>
 
-                            <button
-                                onClick={() => onChat("Optimize current holdings for maximum stability")}
-                                className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-bg-tertiary hover:bg-bg-card border border-border-medium hover:border-accent-primary transition-all text-xs font-medium text-text-secondary hover:text-text-primary group col-span-2"
-                            >
-                                <Bot className="w-3.5 h-3.5 text-accent-primary group-hover:scale-110 transition-transform" />
-                                Optimize Holdings
-                            </button>
-                        </div>
+                        <button
+                            onClick={() => onChat("Forecast yield opportunities for the next 24 hours")}
+                            className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-bg-tertiary hover:bg-bg-card border border-border-medium hover:border-accent-primary transition-all text-xs font-medium text-text-secondary hover:text-text-primary group"
+                        >
+                            <Radar className="w-3.5 h-3.5 text-color-info group-hover:scale-110 transition-transform" />
+                            Yield Scan
+                        </button>
+
+                        <button
+                            onClick={() => onChat("Optimize current holdings for maximum stability")}
+                            className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-bg-tertiary hover:bg-bg-card border border-border-medium hover:border-accent-primary transition-all text-xs font-medium text-text-secondary hover:text-text-primary group col-span-2"
+                        >
+                            <Bot className="w-3.5 h-3.5 text-accent-primary group-hover:scale-110 transition-transform" />
+                            Optimize Holdings
+                        </button>
                     </div>
                 </div>
             </div>

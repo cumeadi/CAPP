@@ -12,18 +12,21 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 import structlog
 
-from ..agents.base import BasePaymentAgent, AgentConfig
-from ..models.payments import (
+from applications.capp.capp.agents.base import BasePaymentAgent, AgentConfig
+from applications.capp.capp.models.payments import (
     CrossBorderPayment, PaymentResult, PaymentStatus, PaymentRoute,
     Country, Currency
 )
-from ..services.compliance import ComplianceService
-from ..core.redis import get_cache
-from ..config.settings import get_settings
+from applications.capp.capp.services.compliance import ComplianceService
+from applications.capp.capp.services.sanctions import SanctionsService
+from applications.capp.capp.services.fraud import FraudDetectionService
+from applications.capp.capp.core.redis import get_cache
+from applications.capp.capp.config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
 
+# ... (Configs remain same) - Fixed: Restoring missing configs
 class ComplianceConfig(AgentConfig):
     """Configuration for compliance agent"""
     agent_type: str = "compliance"
@@ -101,15 +104,14 @@ class RegulatoryReport(BaseModel):
     generated_at: datetime
     content: Dict[str, Any]
 
-
 class ComplianceAgent(BasePaymentAgent):
     """
     Compliance Agent
     
     Handles regulatory compliance for cross-border payments:
     - Multi-jurisdiction compliance validation
-    - Real-time sanctions screening
-    - Risk scoring and assessment
+    - Real-time sanctions screening (OFAC)
+    - Risk scoring and assessment (Fraud Detection)
     - Automated regulatory reporting
     - KYC/AML compliance checks
     """
@@ -119,6 +121,8 @@ class ComplianceAgent(BasePaymentAgent):
         self.config = config
         self.cache = get_cache()
         self.compliance_service = ComplianceService()
+        self.sanctions_service = SanctionsService()
+        self.fraud_service = FraudDetectionService()
         
         # Compliance tracking
         self.compliance_checks: Dict[str, List[ComplianceCheck]] = {}
@@ -344,31 +348,29 @@ class ComplianceAgent(BasePaymentAgent):
         try:
             self.logger.info("Performing sanctions screening", parties_count=len(parties))
             
-            # Extract party information for screening
-            parties_to_check = []
-            for party in parties:
-                if "name" in party:
-                    parties_to_check.append(party["name"])
-                if "phone_number" in party:
-                    parties_to_check.append(party["phone_number"])
-            
-            # Perform sanctions check using compliance service
-            sanctions_result = await self.compliance_service.check_sanctions(
-                parties[0].get("country") if parties else None,
-                parties[1].get("country") if len(parties) > 1 else None
-            )
-            
-            # Mock sanctions screening logic
-            # In real implementation, this would call external sanctions databases
             matches_found = []
             risk_score = 0.0
             
-            # Simulate sanctions check
-            for party_name in parties_to_check:
-                # Mock high-risk names for demo
-                if any(risk_name in party_name.lower() for risk_name in ["sanctioned", "blocked", "restricted"]):
-                    matches_found.append(party_name)
-                    risk_score += 0.5
+            # Extract party information and screen
+            parties_to_check = []
+            
+            for party in parties:
+                name = party.get("name")
+                # Also check wallet if available (not currently in party dict but good to have)
+                wallet = party.get("wallet_address")
+                country = party.get("country")
+                
+                if name:
+                    parties_to_check.append(name)
+                    result = await self.sanctions_service.screening_check(
+                        name=name,
+                        wallet_address=wallet,
+                        country=country
+                    )
+                    
+                    if result["is_sanctioned"]:
+                        matches_found.append(f"{name} ({result['reason']})")
+                        risk_score = max(risk_score, 1.0) # Sanctions hit is auto-fail
             
             is_compliant = len(matches_found) == 0
             
@@ -541,36 +543,34 @@ class ComplianceAgent(BasePaymentAgent):
             )
     
     async def _perform_aml_check(self, payment: CrossBorderPayment) -> ComplianceCheck:
-        """Perform AML compliance check"""
+        """Perform AML compliance check using FraudDetectionService"""
         start_time = datetime.now(timezone.utc)
         
         try:
-            # Mock AML check
-            risk_score = 0.0
-            violations = []
+            # Call Fraud Service
+            fraud_result = await self.fraud_service.analyze_transaction(
+                user_id=str(payment.sender.dict().get("sender_id", "anonymous")),
+                amount=float(payment.amount)
+            )
+            
+            risk_score = fraud_result["risk_score"]
+            violations = fraud_result["flags"]
             required_actions = []
             
-            # Check for suspicious patterns
-            if payment.amount > Decimal(str(self.config.aml_threshold_amount)):
-                risk_score += 0.4
-                required_actions.append("Enhanced due diligence required")
-            
-            # Check for round amounts (potential structuring)
-            if payment.amount % 1000 == 0:
-                risk_score += 0.2
-                violations.append("Round amount detected")
-            
+            if risk_score > 0.5:
+                 required_actions.append("EDD Required")
+
             processing_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
             
             return ComplianceCheck(
                 check_id=f"aml_{payment.payment_id}_{datetime.now().timestamp()}",
                 check_type="aml",
-                status="passed" if risk_score < 0.5 else "failed",
+                status="passed" if risk_score < self.config.high_risk_score_threshold else "failed",
                 risk_score=risk_score,
                 details={
                     "violations": violations,
                     "required_actions": required_actions,
-                    "threshold_amount": self.config.aml_threshold_amount
+                    "is_high_risk": fraud_result["is_high_risk"]
                 },
                 timestamp=datetime.now(timezone.utc),
                 duration_ms=processing_time
@@ -593,8 +593,11 @@ class ComplianceAgent(BasePaymentAgent):
         start_time = datetime.now(timezone.utc)
         
         try:
-            # Perform sanctions check
-            sanctions_result = await self.check_sanctions([payment.sender, payment.recipient])
+            # Perform sanctions check - Convert models to dicts
+            sanctions_result = await self.check_sanctions([
+                payment.sender.dict(), 
+                payment.recipient.dict()
+            ])
             
             processing_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
             
@@ -635,8 +638,8 @@ class ComplianceAgent(BasePaymentAgent):
             
             # Check for PEP indicators in names
             pep_indicators = ["minister", "president", "governor", "senator", "official"]
-            sender_name = payment.sender.get("name", "").lower()
-            recipient_name = payment.recipient.get("name", "").lower()
+            sender_name = payment.sender.name.lower()
+            recipient_name = payment.recipient.name.lower()
             
             for indicator in pep_indicators:
                 if indicator in sender_name or indicator in recipient_name:
@@ -681,8 +684,8 @@ class ComplianceAgent(BasePaymentAgent):
             
             # Simulate media screening
             adverse_terms = ["fraud", "money laundering", "terrorism", "corruption"]
-            sender_name = payment.sender.get("name", "").lower()
-            recipient_name = payment.recipient.get("name", "").lower()
+            sender_name = payment.sender.name.lower()
+            recipient_name = payment.recipient.name.lower()
             
             for term in adverse_terms:
                 if term in sender_name or term in recipient_name:

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import engine, Base
-from .routers import wallet, agents, chain_data
+from .routers import wallet, agents, chain_data, bridge
 
 # Create DB Tables
 Base.metadata.create_all(bind=engine)
@@ -14,6 +14,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 
 from applications.capp.capp.core.redis import init_redis
 from applications.capp.capp.core.aptos import init_aptos_client
+from applications.capp.capp.core.polygon import init_polygon_client
 
 app = FastAPI(
     title="CAPP Wallet API",
@@ -29,8 +30,9 @@ async def startup_event():
     except Exception as e:
         print(f"Warning: Redis unavailable ({e}). Agents might fail if they rely on cache.")
     
-    # Initialize Aptos Client
+    # Initialize Clients
     await init_aptos_client()
+    await init_polygon_client()
 
 # CORS Configuration
 origins = [
@@ -49,6 +51,7 @@ app.add_middleware(
 app.include_router(wallet.router)
 app.include_router(agents.router)
 app.include_router(chain_data.router)
+app.include_router(bridge.router)
 
 @app.get("/")
 async def root():

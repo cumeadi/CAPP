@@ -78,6 +78,14 @@ class Settings(BaseSettings):
         default="0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", 
         env="APTOS_CONTRACT_ADDRESS"
     )
+
+    # Polygon Blockchain
+    POLYGON_RPC_URL: str = Field(
+        default="https://polygon-mainnet.g.alchemy.com/v2/REDACTED_ALCHEMY_KEY",
+        env="POLYGON_RPC_URL"
+    )
+    POLYGON_PRIVATE_KEY: str = Field(default="demo-private-key", env="POLYGON_PRIVATE_KEY")
+    CHAIN_ID_POLYGON: int = Field(default=137, env="CHAIN_ID_POLYGON")
     
     # LiquidSwap (Pontem) DEX Address
     LIQUIDSWAP_ADDRESS: str = Field(
