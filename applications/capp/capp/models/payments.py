@@ -12,6 +12,26 @@ from pydantic import BaseModel, Field, validator, model_validator
 from pydantic.types import condecimal
 
 
+class Chain(str, Enum):
+    """Supported Blockchains"""
+    APTOS = "aptos"
+    BASE = "base"
+    ARBITRUM = "arbitrum"
+    ETHEREUM = "ethereum"
+    OPTIMISM = "optimism"
+    POLYGON = "polygon"
+
+
+class BridgeProvider(str, Enum):
+    """Bridge Providers"""
+    STARGATE = "stargate"
+    ACROSS = "across"
+    HOP = "hop"
+    CCTP = "cctp"  # Circle Cross-Chain Transfer Protocol
+    HYPERLANE = "hyperlane"
+    LAYERZERO = "layerzero"
+    LI_FI = "li.fi"
+
 class PaymentStatus(str, Enum):
     """Payment status enumeration"""
     PENDING = "pending"
@@ -205,6 +225,14 @@ class PaymentRoute(BaseModel):
     reliability_score: float = Field(ge=0.0, le=1.0)
     total_score: float = Field(ge=0.0, le=1.0)
     
+    # Cross-Chain Routing
+    from_chain: Optional[Chain] = None
+    to_chain: Optional[Chain] = None
+    bridge_provider: Optional[BridgeProvider] = None
+    gas_cost_usd: Optional[Decimal] = None
+    bridge_fee_usd: Optional[Decimal] = None
+    estimated_duration_seconds: Optional[int] = None
+    
     class Config:
         json_encoders = {
             UUID: str,
@@ -332,12 +360,15 @@ class CrossBorderPayment(BaseModel):
     def validate_currencies_and_countries(self):
         """Validate currency and country consistency"""
         # Validate currencies
-        if self.from_currency == self.to_currency:
-            raise ValueError('From and to currencies must be different')
+        # Validate currencies
+        # Allow same currency if it's a cross-chain bridge (indicated by target_chain in metadata)
+        is_bridge = self.metadata and self.metadata.get("target_chain")
+        if self.from_currency == self.to_currency and not is_bridge:
+            raise ValueError('From and to currencies must be different (unless bridging)')
         
         # Validate countries
-        if self.sender and self.recipient and self.sender.country == self.recipient.country:
-            raise ValueError('Sender and recipient must be in different countries')
+        if self.sender and self.recipient and self.sender.country == self.recipient.country and not is_bridge:
+            raise ValueError('Sender and recipient must be in different countries (unless bridging)')
         
         return self
     

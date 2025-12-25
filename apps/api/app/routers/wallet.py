@@ -118,7 +118,8 @@ async def send_transaction(request: schemas.TransactionRequest):
             payment_method=PaymentMethod.CRYPTO,
             status=PaymentStatus.SETTLING,
             sender=sender,
-            recipient=recipient
+            recipient=recipient,
+            metadata={"target_chain": request.target_chain} if request.target_chain else {}
         )
         
         batch = SettlementBatch(

@@ -57,13 +57,14 @@ export const api = {
         return res.json();
     },
 
-    executeTransfer: async (to: string, amount: number): Promise<{ tx_hash: string }> => {
+    executeTransfer: async (to: string, amount: number, targetChain?: string): Promise<{ tx_hash: string }> => {
         const res = await fetch(`${API_BASE}/wallet/send`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 to_address: to,
-                amount: amount
+                amount: amount,
+                target_chain: targetChain
             })
         });
         if (!res.ok) throw new Error('Transfer failed');

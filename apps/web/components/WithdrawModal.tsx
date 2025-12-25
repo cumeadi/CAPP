@@ -23,7 +23,8 @@ export default function WithdrawModal({ isOpen, onClose }: WithdrawModalProps) {
 
         try {
             // Execute Transfer
-            const result = await api.executeTransfer(recipient, parseFloat(amount));
+            const targetChain = (window as any).selectedChain || undefined;
+            const result = await api.executeTransfer(recipient, parseFloat(amount), targetChain);
             setTxHash(result.tx_hash);
             setStep('SUCCESS');
         } catch (e) {
@@ -80,6 +81,24 @@ export default function WithdrawModal({ isOpen, onClose }: WithdrawModalProps) {
                                                 className="w-full bg-bg-tertiary border border-border-medium rounded-xl p-3 font-mono text-sm text-text-primary focus:border-accent-primary focus:outline-none transition-colors"
                                                 placeholder="0.00"
                                             />
+                                        </div>
+
+                                        <div>
+                                            <label className="text-xs text-text-tertiary uppercase tracking-widest mb-2 block">Destination Network</label>
+                                            <select
+                                                onChange={(e) => {
+                                                    // Store selected chain in state (need to add state)
+                                                    const val = e.target.value;
+                                                    // For now hacky: attach to window or just add state
+                                                    (window as any).selectedChain = val;
+                                                }}
+                                                className="w-full bg-bg-tertiary border border-border-medium rounded-xl p-3 font-mono text-sm text-text-primary focus:border-accent-primary focus:outline-none transition-colors"
+                                            >
+                                                <option value="">Aptos (Direct)</option>
+                                                <option value="base">Base (L2)</option>
+                                                <option value="arbitrum">Arbitrum (L2)</option>
+                                                <option value="ethereum">Ethereum (L1)</option>
+                                            </select>
                                         </div>
 
                                         <button
