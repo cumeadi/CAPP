@@ -60,6 +60,44 @@ class TransactionResponse(BaseModel):
     status: str
     timestamp: datetime
 
+# Starknet Schemas
+class StarknetAddressRequest(BaseModel):
+    public_key: str # Hex string
+
+class StarknetAddressResponse(BaseModel):
+    address: str
+    public_key: str
+
+class StarknetDeployRequest(BaseModel):
+    public_key: str
+    private_key: str # For demo purposes, we accept private key to sign the deploy tx
+    amount: Optional[float] = None # Optional initial funding?
+
+class StarknetTransferRequest(BaseModel):
+    recipient: str
+    amount: float # In standard units (will be converted to Wei/Fri)
+    token: Optional[str] = None # Optional token address
+
+# Routing Schemas
+class PaymentRoute(BaseModel):
+    chain: str # APTOS, POLYGON, STARKNET
+    fee_usd: float
+    eta_seconds: int
+    recommendation_score: float
+    reason: str
+    estimated_gas_token: float # Amount in native token (APT/MATIC/ETH)
+
+class RoutingRequest(BaseModel):
+    amount: float
+    recipient: str # Ensure this can cover all chains or we use a "User ID"
+    currency: str = "USD"
+    preference: str = "CHEAPEST" # CHEAPEST, FASTEST, BALANCED
+
+class RoutingResponse(BaseModel):
+    routes: List[PaymentRoute]
+    recommended_route: PaymentRoute
+
+
 # Liquidity Schemas
 class TreasuryStatus(BaseModel):
     total_value_usd: float

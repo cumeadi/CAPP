@@ -9,6 +9,8 @@ from ..core.mock_provider import MockLLMProvider
 from applications.capp.capp.services.market_data import RealTimeMarketService
 from applications.capp.capp.services.chain_metrics import ChainMetricsService
 from applications.capp.capp.config.settings import get_settings
+from applications.capp.capp.core.x402_client import X402Client
+from applications.capp.capp.core.agent_wallet import AgentWallet
 
 logger = structlog.get_logger(__name__)
 
@@ -25,6 +27,15 @@ class MarketAnalysisAgent:
         self.market_service = RealTimeMarketService()
         self.chain_service = ChainMetricsService()
         self.logger = structlog.get_logger(__name__)
+        
+        # Economic Agency
+        # We give the analyst a petty wallet to buy better data
+        # In production this ID would be stable
+        self.wallet = AgentWallet(agent_id="market_analyst_001", daily_limit=Decimal("100.00"))
+        # Initial funding
+        self.wallet.deposit(Decimal("50.00"), "Treasury Grant")
+        
+        self.http_client = X402Client(self.wallet)
         
     async def analyze_settlement_risk(self, symbol: str, settlement_amount_usd: float) -> Dict[str, Any]:
         """
@@ -131,3 +142,17 @@ class MarketAnalysisAgent:
             system_prompt=system_prompt
         )
         return response.content
+
+    async def fetch_premium_insight(self, source_url: str) -> Dict[str, Any]:
+        """
+        Fetch High-Quality Data from a Paid Endpoint (x402).
+        The agent will automatically negotiate payment if required.
+        """
+        self.logger.info("Analyst buying premium insight", url=source_url)
+        try:
+            data = await self.http_client.get(source_url)
+            self.logger.info("Premium Data Acquired", keys=list(data.keys()))
+            return data
+        except Exception as e:
+            self.logger.error("Failed to buy premium data", error=str(e))
+            return {"error": "Could not acquire premium data"}

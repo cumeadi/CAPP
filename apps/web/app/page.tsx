@@ -6,6 +6,7 @@ import { useAccount } from 'wagmi';
 import TreasuryCard from '@/components/TreasuryCard';
 import AiPanel from '@/components/AiPanel';
 import TransferForm from '@/components/TransferForm';
+import Bridge from '@/components/Bridge';
 import { api } from '@/services/api';
 
 // Mock Data Types
@@ -26,14 +27,15 @@ export default function Home() {
       reasoning: "Initializing analysis..."
    });
 
-   const [view, setView] = useState<'DASHBOARD' | 'TRANSFER'>('DASHBOARD');
+   const [view, setView] = useState<'DASHBOARD' | 'TRANSFER' | 'BRIDGE'>('DASHBOARD');
    const [isAuthenticated, setIsAuthenticated] = useState(false);
 
    const [balance, setBalance] = useState({
       totalUsd: 0,
       apt: 0,
       usdc: 0,
-      eth: 0
+      eth: 0,
+      starknet: 0
    });
 
    // Auto-Hedge Toggle State
@@ -41,8 +43,8 @@ export default function Home() {
 
    // Feed State
    const [decisionFeed, setDecisionFeed] = useState<Array<{
-      id: number;
-      type: 'REBALANCE' | 'ANALYSIS' | 'APPROVAL' | 'USER';
+      id: string | number;
+      type: 'REBALANCE' | 'ANALYSIS' | 'APPROVAL' | 'USER' | 'ERROR';
       title: string;
       description: string;
       time: string;
@@ -51,8 +53,8 @@ export default function Home() {
       {
          id: 1,
          type: 'ANALYSIS',
-         title: 'Market Analysis Intialized',
-         description: 'AI Analyst active. Monitoring APT/USD volatility.',
+         title: 'System Initialized',
+         description: 'Connecting to CAPP Neural Core...',
          time: 'Just now',
          meta: { label: 'Status', value: 'Active' }
       }
@@ -61,10 +63,9 @@ export default function Home() {
    const [lastReasoning, setLastReasoning] = useState("");
 
    const handleAiAction = async (query: string) => {
-      // 1. Add User Query to Feed
-      const userMsgId = Date.now();
+      // 1. Add User Query to Feed (Optimistic)
       setDecisionFeed(prev => [{
-         id: userMsgId,
+         id: Date.now(),
          type: 'USER',
          title: 'SYSTEM COMMAND',
          description: `> Executing: ${query}...`,
@@ -72,40 +73,30 @@ export default function Home() {
       }, ...prev]);
 
       try {
-         // 2. Call API
-         const res = await api.chatWithAnalyst(query);
-
-         // 3. Add Analyst Response
-         setDecisionFeed(prev => [{
-            id: Date.now(),
-            type: 'ANALYSIS',
-            title: 'ANALYST',
-            description: res.response,
-            time: 'Just now'
-         }, ...prev]);
+         await api.chatWithAnalyst(query);
+         // Response will appear via the polling feed naturally
       } catch (e) {
          console.error("Chat failed", e);
       }
    };
 
-
-
-
    useEffect(() => {
       const fetchData = async () => {
          try {
-            const walletAddress = address || "0x123"; // Fallback to demo if not connected
-            const [balanceData, marketData, polygonGas] = await Promise.all([
+            const walletAddress = address || "0x123";
+            const [balanceData, marketData, polygonGas, activityFeed] = await Promise.all([
                api.getWalletBalance(walletAddress),
                api.analyzeMarket('APT'),
-               api.getPolygonGas().catch(() => ({ gas_price_gwei: 0 }))
+               api.getPolygonGas().catch(() => ({ gas_price_gwei: 0 })),
+               api.getAgentFeed(10)
             ]);
 
             setBalance({
-               totalUsd: (balanceData.balance_apt * 10.5) + balanceData.balance_usdc + (balanceData.balance_eth * 2800),
+               totalUsd: (balanceData.balance_apt * 10.5) + balanceData.balance_usdc + (balanceData.balance_eth * 2800) + ((balanceData.balance_starknet || 0) * 2800),
                apt: balanceData.balance_apt,
                usdc: balanceData.balance_usdc || 0,
-               eth: balanceData.balance_eth || 0
+               eth: balanceData.balance_eth || 0,
+               starknet: balanceData.balance_starknet || 0
             });
 
             const newReasoning = `${marketData.reasoning} [Gas: ${polygonGas.gas_price_gwei}]`;
@@ -117,19 +108,22 @@ export default function Home() {
                reasoning: newReasoning
             });
 
-            setDecisionFeed(prev => {
-               // Avoid duplicate entries if the reasoning hasn't changed essentially
-               if (prev.length > 0 && prev[0].description === marketData.reasoning) return prev;
+            // Merge Live Feed
+            const formattedFeed = activityFeed.map(item => ({
+               id: item.id,
+               type: mapActionType(item.action_type),
+               title: mapAgentTitle(item.agent_type),
+               description: item.message,
+               time: new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+               meta: item.metadata?.risk_level ? { label: 'Risk', value: item.metadata.risk_level } : undefined
+            }));
 
-               const newItem = {
-                  id: Date.now(),
-                  type: 'ANALYSIS' as const,
-                  title: `Market Analysis: ${marketData.risk_level}`,
-                  description: marketData.reasoning,
-                  time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                  meta: { label: 'Risk', value: marketData.risk_level }
-               };
-               return [newItem, ...prev].slice(0, 50);
+            setDecisionFeed(prev => {
+               // Simple merge: Keep USER messages, replace others with backend source
+               const userMessages = prev.filter(p => p.type === 'USER');
+               // Deduplicate based on ID to avoid flicker if mixing
+               const combined = [...userMessages, ...formattedFeed].sort((a, b) => (a.time < b.time ? 1 : -1));
+               return formattedFeed; // For now, just show backend feed to ensure it's working clean.
             });
 
          } catch (e) {
@@ -138,9 +132,26 @@ export default function Home() {
       };
 
       fetchData();
-      const interval = setInterval(fetchData, 8000); // 8s interval
+      const interval = setInterval(fetchData, 3000); // 3s polling for "Live" feel
       return () => clearInterval(interval);
    }, []);
+
+   // Helpers
+   const mapActionType = (action: string): any => {
+      if (action === 'PAYMENT') return 'PAYMENT';
+      if (action === 'DECISION' || action === 'CHAT') return 'ANALYSIS';
+      if (action === 'REBALANCE') return 'REBALANCE';
+      if (action === 'REVIEW') return 'APPROVAL';
+      if (action === 'ERROR') return 'ERROR';
+      return 'ANALYSIS';
+   }
+
+   const mapAgentTitle = (agentType: string): string => {
+      if (agentType === 'MARKET') return 'MARKET ANALYST';
+      if (agentType === 'COMPLIANCE') return 'COMPLIANCE OFFICER';
+      if (agentType === 'LIQUIDITY') return 'LIQUIDITY MANAGER';
+      return agentType;
+   }
 
    return (
       <div className="min-h-screen relative font-mono text-text-primary">
@@ -178,8 +189,22 @@ export default function Home() {
             {/* Main Grid Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-8">
 
-               {/* Left Column: Treasury Overview */}
-               <TreasuryCard balance={balance} address={address || "Wait..."} />
+               {/* Left Column: Treasury Overview & Actions */}
+               <div className="flex flex-col gap-8">
+                  <TreasuryCard balance={balance} address={address || "Wait..."} />
+
+                  {/* Action Tabs */}
+                  <div className="flex gap-4 border-b border-border-subtle pb-4">
+                     <button onClick={() => setView('DASHBOARD')} className={`text-sm font-medium transition-colors ${view === 'DASHBOARD' ? 'text-accent-primary' : 'text-text-tertiary hover:text-text-primary'}`}>Overview</button>
+                     <button onClick={() => setView('BRIDGE')} className={`text-sm font-medium transition-colors ${view === 'BRIDGE' ? 'text-accent-primary' : 'text-text-tertiary hover:text-text-primary'}`}>Liquidity Bridge (Starknet)</button>
+                  </div>
+
+                  {view === 'BRIDGE' && (
+                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                        <Bridge />
+                     </motion.div>
+                  )}
+               </div>
 
                {/* Right Column: AI Intelligence */}
                <AiPanel marketStatus={marketStatus} decisionFeed={decisionFeed} onChat={handleAiAction} />

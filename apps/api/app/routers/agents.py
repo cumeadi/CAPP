@@ -11,7 +11,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 
 from packages.intelligence.market.analyst import MarketAnalysisAgent
 from packages.intelligence.compliance.agent import AIComplianceAgent
+from packages.intelligence.compliance.agent import AIComplianceAgent
 from packages.intelligence.core.gemini_provider import GeminiProvider
+from applications.capp.capp.services.activity_log import get_activity_log
 from applications.capp.capp.config.settings import settings
 from applications.capp.capp.models.payments import (
     CrossBorderPayment, SenderInfo, RecipientInfo, 
@@ -65,6 +67,14 @@ async def update_config(config: schemas.AgentConfig):
     app_config = config
     return app_config
 
+@router.get("/feed")
+async def get_activity_feed(limit: int = 20):
+    """
+    Get real-time agent decision feed.
+    """
+    return get_activity_log().get_recent_activities(limit)
+
+
 @router.get("/market/analyze/{symbol}", response_model=schemas.MarketAnalysisResponse)
 async def analyze_market(symbol: str, db: Session = Depends(database.get_db)):
     try:
@@ -97,8 +107,30 @@ async def analyze_market(symbol: str, db: Session = Depends(database.get_db)):
             reasoning=adjusted_reasoning,
             timestamp=datetime.utcnow()
         )
+        return schemas.MarketAnalysisResponse(
+            symbol=symbol,
+            risk_level=result.get("risk_level", "UNKNOWN"),
+            recommendation=result.get("recommendation", "UNKNOWN"),
+            reasoning=adjusted_reasoning,
+            timestamp=datetime.utcnow()
+        )
     except Exception as e:
+        get_activity_log().log_activity(
+            agent_id="market_analyst", 
+            agent_type="MARKET", 
+            action_type="ERROR", 
+            message=f"Analysis failed for {symbol}: {str(e)}"
+        )
         raise HTTPException(status_code=500, detail=str(e))
+    else:
+        # Success Log
+        get_activity_log().log_activity(
+            agent_id="market_analyst", 
+            agent_type="MARKET", 
+            action_type="DECISION", 
+            message=f"Analyzed {symbol}: {result.get('recommendation', 'N/A')}",
+            metadata=result
+        )
 
 @router.post("/market/chat", response_model=schemas.ChatResponse)
 async def chat_analyst(request: schemas.ChatRequest, db: Session = Depends(database.get_db)):
@@ -120,6 +152,14 @@ async def chat_analyst(request: schemas.ChatRequest, db: Session = Depends(datab
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    else:
+         get_activity_log().log_activity(
+            agent_id="market_analyst", 
+            agent_type="MARKET", 
+            action_type="CHAT", 
+            message=f"Answered: {request.query[:30]}...",
+            metadata={"full_response": response_text}
+        )
 
 @router.post("/compliance/check", response_model=schemas.ComplianceCheckResponse)
 async def check_compliance(request: schemas.ComplianceCheckRequest):
@@ -181,4 +221,19 @@ async def check_compliance(request: schemas.ComplianceCheckRequest):
         )
     except Exception as e:
         print(f"Compliance Error: {e}") # Debug log
+        get_activity_log().log_activity(
+            agent_id="compliance_bot", 
+            agent_type="COMPLIANCE", 
+            action_type="ERROR", 
+            message=f"Check failed: {str(e)}"
+        )
         raise HTTPException(status_code=500, detail=str(e))
+    else:
+        status = "APPROVED" if result.get("is_compliant", False) else "FLAGGED"
+        get_activity_log().log_activity(
+            agent_id="compliance_bot", 
+            agent_type="COMPLIANCE", 
+            action_type="REVIEW", 
+            message=f"Transaction {status}: {reasoning[:50]}...",
+            metadata=result
+        )

@@ -1,11 +1,11 @@
 from decimal import Decimal
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Any
 from datetime import datetime
 from pydantic import BaseModel
 
 class RebalanceAction(BaseModel):
     should_rebalance: bool
-    action_type: str = "NONE" # NONE, MARKET_SWAP, LIMIT_ORDER
+    action_type: str = "NONE" # NONE, MARKET_SWAP, LIMIT_ORDER, HALT
     amount_needed: Decimal = Decimal("0")
     reason: str = ""
 
@@ -73,3 +73,72 @@ class AdaptiveLiquidityStrategy:
             )
             
         return RebalanceAction(should_rebalance=False)
+
+class AIAdaptiveStrategy(AdaptiveLiquidityStrategy):
+    """
+    AI-Enhanced Liquidity Strategy
+    
+    Uses market risk analysis from the AI Brain to adjust buffers dynamically.
+    """
+    def __init__(self, base_buffer: Decimal = Decimal("1000.0")):
+        super().__init__(base_buffer)
+        
+    def evaluate_with_ai(self, pool_id: str, current_balance: Decimal, ai_analysis: Dict[str, Any]) -> RebalanceAction:
+        """
+        Evaluate rebalancing leveraging AI Market Analysis.
+        
+        Risk Levels:
+        - LOW: Normal operation.
+        - MEDIUM: Increase buffer by 20%.
+        - HIGH: Increase buffer by 50% and prefer LIMIT orders to avoid slippage, or HALT if extreme.
+        """
+        # 1. Get Standard Threshold
+        base_threshold = self.calculate_threshold(pool_id)
+        
+        # 2. Apply AI Risk Multiplier
+        risk_level = ai_analysis.get("risk_level", "UNKNOWN")
+        recommendation = ai_analysis.get("recommendation", "HOLD")
+        
+        multiplier = Decimal("1.0")
+        if risk_level == "MEDIUM":
+            multiplier = Decimal("1.2")
+        elif risk_level == "HIGH":
+            multiplier = Decimal("1.5")
+            
+        adjusted_threshold = base_threshold * multiplier
+        
+        # 3. Check for HALT conditions
+        if risk_level == "HIGH" and "HALT" in recommendation:
+             return RebalanceAction(
+                should_rebalance=False,
+                action_type="HALT",
+                amount_needed=Decimal("0"),
+                reason=f"AI HALT: {ai_analysis.get('reasoning')}"
+            )
+
+        # 4. Evaluate against Adjusted Threshold
+        status = super().evaluate(pool_id, current_balance)
+        
+        # If standard eval says rebalance, check if we need to modify the action based on AI
+        if status.should_rebalance:
+            # If risk is high, maybe force LIMIT order even if critical, to avoid bad execution? 
+            # Or conversely, if risk is high, maybe we desperately need liquidity so MARKET SWAP is okay?
+            # Let's say if Risk is High, we want to be CAREFUL, so we prefer LIMIT unless it's dangerously low.
+            
+            # Re-calculate needed with adjusted threshold
+            if current_balance < adjusted_threshold:
+                needed = adjusted_threshold - current_balance
+                status.amount_needed = max(status.amount_needed, needed)
+                status.reason += f" [AI Risk Adjustment: {risk_level}]"
+                
+        # If standard eval said NO rebalance, but we are below the AI adjusted threshold
+        elif current_balance < adjusted_threshold:
+             needed = adjusted_threshold - current_balance
+             return RebalanceAction(
+                should_rebalance=True,
+                action_type="LIMIT_ORDER",
+                amount_needed=needed,
+                reason=f"AI PREDICTIVE: Balance {current_balance} < Risk-Adjusted Buffer {adjusted_threshold}"
+            )
+            
+        return status

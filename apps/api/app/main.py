@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import engine, Base
-from .routers import wallet, agents, chain_data, bridge
+from .routers import wallet, agents, chain_data, bridge, starknet, routing
 
 # Create DB Tables
 Base.metadata.create_all(bind=engine)
@@ -52,6 +52,8 @@ app.include_router(wallet.router)
 app.include_router(agents.router)
 app.include_router(chain_data.router)
 app.include_router(bridge.router)
+app.include_router(starknet.router)
+app.include_router(routing.router)
 
 @app.get("/")
 async def root():

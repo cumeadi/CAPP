@@ -23,6 +23,9 @@ from applications.capp.capp.services.fraud import FraudDetectionService
 from applications.capp.capp.core.redis import get_cache
 from applications.capp.capp.config.settings import get_settings
 
+from packages.intelligence.compliance.agent import AIComplianceAgent
+from packages.intelligence.core.gemini_provider import GeminiProvider
+
 logger = structlog.get_logger(__name__)
 
 
@@ -122,7 +125,13 @@ class ComplianceAgent(BasePaymentAgent):
         self.cache = get_cache()
         self.compliance_service = ComplianceService()
         self.sanctions_service = SanctionsService()
+        self.sanctions_service = SanctionsService()
         self.fraud_service = FraudDetectionService()
+        
+        # Initialize AI Agent
+        self.ai_agent = self._initialize_ai_agent()
+        
+        # Compliance tracking
         
         # Compliance tracking
         self.compliance_checks: Dict[str, List[ComplianceCheck]] = {}
@@ -148,6 +157,19 @@ class ComplianceAgent(BasePaymentAgent):
         
         # Start the task
         asyncio.create_task(reporting_task())
+        
+    def _initialize_ai_agent(self) -> AIComplianceAgent:
+        """Initialize the AI Compliance Agent with available provider"""
+        settings = get_settings()
+        provider = None
+        if hasattr(settings, 'GEMINI_API_KEY') and settings.GEMINI_API_KEY:
+            try:
+                provider = GeminiProvider(api_key=settings.GEMINI_API_KEY, model_name=settings.GEMINI_MODEL or "gemini-pro")
+                self.logger.info("Initialized Compliance Agent with Gemini Provider")
+            except Exception as e:
+                self.logger.warning("Failed to init Gemini Provider, using Mock", error=str(e))
+        
+        return AIComplianceAgent(provider=provider)
     
     async def process_payment(self, payment: CrossBorderPayment) -> PaymentResult:
         """
@@ -295,6 +317,24 @@ class ComplianceAgent(BasePaymentAgent):
             
             # Determine compliance status
             is_compliant = len(violations) == 0 and overall_risk_score < self.config.high_risk_score_threshold
+            
+            # --- AI AUTONOMOUS REVIEW ---
+            # If standard checks failed or are borderline (Medium Risk), consult AI
+            if (not is_compliant) or (risk_level == "medium"):
+                self.logger.info("Triggering AI Autonomous Review", risk_level=risk_level, violations=violations)
+                
+                ai_check = await self._perform_ai_risk_assessment(payment, violations)
+                checks.append(ai_check)
+                
+                # If AI says "SAFE", we can override logical violations (e.g. false positives)
+                # But only if risk score wasn't extreme (e.g. > 0.9)
+                if ai_check.status == "passed" and overall_risk_score < 0.9:
+                    self.logger.info("AI Overrode Compliance Failure", reasoning=ai_check.details.get("reasoning"))
+                    is_compliant = True
+                    violations = [] # Clear violations
+                    overall_risk_score = 0.5 # Reset to medium/safe
+                    risk_level = "medium"
+                    required_actions.append("AI Approved: Monitored")
             
             # Calculate processing time
             processing_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
@@ -719,6 +759,44 @@ class ComplianceAgent(BasePaymentAgent):
                 duration_ms=int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
             )
     
+    async def _perform_ai_risk_assessment(self, payment: CrossBorderPayment, current_violations: List[str]) -> ComplianceCheck:
+        """Perform AI-based Autonomous Risk Assessment"""
+        start_time = datetime.now(timezone.utc)
+        try:
+            # Call package agent
+            ai_result = await self.ai_agent.evaluate_transaction(payment)
+            
+            is_compliant = ai_result.get("is_compliant", False)
+            risk_score = ai_result.get("risk_score", 0.5)
+            reasoning = ai_result.get("reasoning", "No reasoning provided")
+            
+            processing_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+            
+            return ComplianceCheck(
+                check_id=f"ai_{payment.payment_id}_{datetime.now().timestamp()}",
+                check_type="ai_review",
+                status="passed" if is_compliant else "failed",
+                risk_score=risk_score,
+                details={
+                    "reasoning": reasoning,
+                    "violations_context": current_violations,
+                    "model_decision": "APPROVE" if is_compliant else "REJECT"
+                },
+                timestamp=datetime.now(timezone.utc),
+                duration_ms=processing_time
+            )
+        except Exception as e:
+            self.logger.error("AI check failed", error=str(e))
+            return ComplianceCheck(
+                check_id=f"ai_{payment.payment_id}_{datetime.now().timestamp()}",
+                check_type="ai_review",
+                status="error",
+                risk_score=1.0,
+                details={"error": str(e)},
+                timestamp=datetime.now(timezone.utc),
+                duration_ms=int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+            )
+
     def _calculate_overall_risk_score(self, checks: List[ComplianceCheck]) -> float:
         """Calculate overall risk score from individual checks"""
         if not checks:

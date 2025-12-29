@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Bot, CheckCircle, AlertTriangle, Activity, RefreshCw, Radar, ShieldCheck } from 'lucide-react';
+import { Bot, CheckCircle, AlertTriangle, Activity, RefreshCw, Radar, ShieldCheck, Wallet, XCircle } from 'lucide-react';
 
 interface AiPanelProps {
     marketStatus: {
@@ -10,8 +10,8 @@ interface AiPanelProps {
         reasoning: string;
     };
     decisionFeed: Array<{
-        id: number;
-        type: 'REBALANCE' | 'ANALYSIS' | 'APPROVAL' | 'USER';
+        id: string | number;
+        type: 'REBALANCE' | 'ANALYSIS' | 'APPROVAL' | 'USER' | 'PAYMENT' | 'ERROR';
         title: string;
         description: string;
         time: string;
@@ -53,12 +53,24 @@ export default function AiPanel({ marketStatus, decisionFeed, onChat }: AiPanelP
                 <div className="flex-1 overflow-y-auto space-y-6 pr-2 custom-scrollbar relative">
                     {decisionFeed.map((item) => (
                         <div key={item.id} className={`pl-4 border-l-2 relative ${item.type === 'REBALANCE' ? 'border-color-success' :
-                            item.type === 'ANALYSIS' ? 'border-color-info' : 'border-accent-primary'
+                                item.type === 'ANALYSIS' ? 'border-color-info' :
+                                    item.type === 'PAYMENT' ? 'border-accent-secondary' :
+                                        item.type === 'ERROR' ? 'border-accent-warning' :
+                                            'border-accent-primary'
                             }`}>
                             <div className="flex justify-between items-start mb-1">
-                                <div className={`text-[10px] font-bold uppercase tracking-widest ${item.type === 'REBALANCE' ? 'text-color-success' :
-                                    item.type === 'ANALYSIS' ? 'text-color-info' : 'text-accent-primary'
-                                    }`}>{item.title}</div>
+                                <div className="flex items-center gap-2">
+                                    {/* Icon Indicator */}
+                                    {item.type === 'PAYMENT' && <Wallet className="w-3 h-3 text-accent-secondary" />}
+                                    {item.type === 'ERROR' && <XCircle className="w-3 h-3 text-accent-warning" />}
+
+                                    <div className={`text-[10px] font-bold uppercase tracking-widest ${item.type === 'REBALANCE' ? 'text-color-success' :
+                                            item.type === 'ANALYSIS' ? 'text-color-info' :
+                                                item.type === 'PAYMENT' ? 'text-accent-secondary' :
+                                                    item.type === 'ERROR' ? 'text-accent-warning' :
+                                                        'text-accent-primary'
+                                        }`}>{item.title}</div>
+                                </div>
                                 <div className="text-[10px] text-text-tertiary">{item.time}</div>
                             </div>
                             <div className="text-xs text-text-secondary leading-relaxed mb-2">
