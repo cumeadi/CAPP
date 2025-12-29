@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     
     # Aptos Blockchain
     APTOS_NODE_URL: str = Field(
-        default="https://fullnode.testnet.aptoslabs.com/v1",
+        default="https://api.testnet.aptoslabs.com/v1",
         env="APTOS_NODE_URL"
     )
     APTOS_FAUCET_URL: str = Field(
@@ -72,6 +72,16 @@ class Settings(BaseSettings):
     )
     APTOS_PRIVATE_KEY: str = Field(default="demo-private-key", env="APTOS_PRIVATE_KEY")
     APTOS_ACCOUNT_ADDRESS: str = Field(default="demo-account-address", env="APTOS_ACCOUNT_ADDRESS")
+    
+    # Starknet Blockchain
+    STARKNET_NODE_URL: str = Field(
+        default="https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/FX7-uiaeRx_TaEyI2HGC0",
+        env="STARKNET_NODE_URL"
+    )
+    STARKNET_ACCOUNT_ADDRESS: str = Field(default="0x0", env="STARKNET_ACCOUNT_ADDRESS")
+    STARKNET_PRIVATE_KEY: str = Field(default="0x0", env="STARKNET_PRIVATE_KEY")
+    STARKNET_CHAIN_ID: str = Field(default="SN_SEPOLIA", env="STARKNET_CHAIN_ID")
+    
     
     # Smart Contract Address (Placeholder until deployment)
     # EVM RPCs (Base & Arbitrum)

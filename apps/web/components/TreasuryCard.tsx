@@ -17,8 +17,9 @@ interface TreasuryCardProps {
         apt: number;
         usdc: number;
         eth: number;
-        baseUsdc: number;
-        arbitrumUsdc: number;
+        starknet?: number;
+        baseUsdc?: number;
+        arbitrumUsdc?: number;
     };
     address: string;
 }
@@ -76,6 +77,14 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
                     <div className="font-display text-xl font-semibold mb-1">${(balance.baseUsdc || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
                     <div className="text-xs text-text-secondary">L2 • Spending</div>
                 </div>
+
+                {/* Starknet Card */}
+                <div className="p-4 bg-bg-tertiary border border-border-subtle rounded-xl hover:border-accent-secondary transition-colors group">
+                    <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1 text-accent-secondary">Starknet ETH</div>
+                    <div className="font-display text-xl font-semibold mb-1">${(balance.starknet || 0).toLocaleString('en-US', { maximumFractionDigits: 4 })}</div>
+                    <div className="text-xs text-text-secondary">ZK-Rollup • L2</div>
+                </div>
+
                 <div className="p-4 bg-bg-tertiary border border-border-subtle rounded-xl hover:border-accent-primary transition-colors group">
                     <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">APT</div>
                     <div className="font-display text-xl font-semibold mb-1">${balance.apt.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>

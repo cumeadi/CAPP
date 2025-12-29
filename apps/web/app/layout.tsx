@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Syne, DM_Mono } from "next/font/google";
 import "./globals.css";
 import { Web3Provider } from "@/providers/Web3Provider";
+import { StarknetProvider } from "@/components/StarknetProvider";
 
 const syne = Syne({
   variable: "--font-syne",
@@ -29,7 +30,9 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${syne.variable} ${dmMono.variable} antialiased`}>
         <Web3Provider>
-          {children}
+          <StarknetProvider>
+            {children}
+          </StarknetProvider>
         </Web3Provider>
       </body>
     </html>

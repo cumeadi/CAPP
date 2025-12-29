@@ -20,6 +20,7 @@ from applications.capp.capp.config.settings import get_settings
 from applications.capp.capp.core.aptos import get_aptos_client
 
 from applications.capp.capp.core.redis import get_redis_client
+from applications.capp.capp.core.agent_wallet import AgentWallet
 from applications.capp.capp.services.metrics import MetricsCollector
 
 
@@ -98,6 +99,12 @@ class BasePaymentAgent(ABC):
         self.redis_client = get_redis_client()
         self.metrics_collector = MetricsCollector()
         
+        # Agent Petty Wallet (Autonomous Spending)
+        # Default budget $50.00
+        self.wallet = AgentWallet(agent_id=self.agent_id, daily_limit=Decimal("50.00"))
+        # Initial deposit for demo
+        self.wallet.deposit(Decimal("100.00"), source="Treasury Allocation")
+        
         # Logging
         self.logger = structlog.get_logger(f"{self.agent_type}.{self.agent_id}")
         
@@ -141,6 +148,20 @@ class BasePaymentAgent(ABC):
             bool: True if payment can be processed, False otherwise
         """
         pass
+
+    async def pay_petty_cash(self, amount: Decimal, recipient: str, reason: str) -> bool:
+        """
+        Execute an autonomous petty cash payment (x402 protocol style).
+        Delegates to the AgentWallet to enforce budget limits.
+        """
+        try:
+            self.wallet.spend(amount, recipient, reason)
+            self.logger.info("Autonomous payment executed", 
+                             amount=str(amount), recipient=recipient, reason=reason)
+            return True
+        except ValueError as e:
+            self.logger.warning("Autonomous payment declined", error=str(e))
+            return False
     
     async def validate_corridor(self, from_country: Country, to_country: Country) -> bool:
         """

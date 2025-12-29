@@ -11,6 +11,7 @@ from decimal import Decimal
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
 
 from applications.capp.capp.core.aptos import get_aptos_client
+from applications.capp.capp.core.starknet import get_starknet_client
 from applications.capp.capp.core.polygon import PolygonSettlementService
 from applications.capp.capp.agents.settlement.settlement_agent import SettlementAgent, SettlementConfig
 from applications.capp.capp.models.payments import (
@@ -62,11 +63,29 @@ async def get_balance(address: str):
         USDC_ADDRESS = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" # USDC.e on Polygon
         balance_usdc = await poly_service.get_token_balance(USDC_ADDRESS, evm_address)
 
+        # Starknet Balance
+        # We need a valid Starknet address. For demo, we might use a default if the input doesn't look like one.
+        # Starknet addresses are typically 66 chars hex (like Aptos). 
+        # For simplicity in this demo hack, we'll just check a default env/system address if provided wasn't explicit.
+        stark_client = get_starknet_client()
+        stark_balance = 0.0
+        try:
+             # We can't easily guess the Starknet address from an Aptos/EVM one without a mapping service.
+             # We'll rely on the default account in the client for this dashboard view
+             if stark_client.account:
+                 # Check ETH balance on Starknet
+                 # ETH Contract on Starknet Mainnet: 0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7
+                 stark_balance = await stark_client.get_balance("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+        except Exception as e:
+             print(f"Starknet Balance Check Failed: {e}")
+             stark_balance = 0.0
+
         return {
             "address": address, 
             "balance_apt": float(balance_apt),
             "balance_eth": balance_matic,  # Showing MATIC as ETH/L2 native for now in UI slot
-            "balance_usdc": balance_usdc
+            "balance_usdc": balance_usdc,
+            "balance_starknet": float(stark_balance)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

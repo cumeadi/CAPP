@@ -22,6 +22,8 @@
     "next": "16.1.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "starknet": "^8.9.2",
+    "starknetkit": "^3.4.2",
     "tailwind-merge": "^3.4.0",
     "viem": "^2.21.0",
     "wagmi": "^2.14.0"

@@ -12,7 +12,9 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 import structlog
 
-from .strategies import AdaptiveLiquidityStrategy
+from .strategies import AdaptiveLiquidityStrategy, AIAdaptiveStrategy
+from packages.intelligence.market.analyst import MarketAnalysisAgent
+from packages.intelligence.core.gemini_provider import GeminiProvider
 from applications.capp.capp.agents.base import BasePaymentAgent, AgentConfig
 from applications.capp.capp.models.payments import (
     CrossBorderPayment, PaymentResult, PaymentStatus, PaymentRoute,
@@ -100,10 +102,26 @@ class LiquidityAgent(BasePaymentAgent):
         self.active_reservations: Dict[str, LiquidityReservation] = {}
         
         # Strategy
-        self.strategy = AdaptiveLiquidityStrategy(base_buffer=Decimal("50000.00")) # Lower default for testing
+        self.strategy = AIAdaptiveStrategy(base_buffer=Decimal("50000.00"))
+        
+        # Initialize AI Analyst
+        self.market_analyst = self._initialize_market_analyst()
         
         # Initialize default pools
         self._initialize_default_pools()
+    
+    def _initialize_market_analyst(self) -> MarketAnalysisAgent:
+        """Initialize the AI Market Analyst with available provider"""
+        settings = get_settings()
+        provider = None
+        if hasattr(settings, 'GEMINI_API_KEY') and settings.GEMINI_API_KEY:
+            try:
+                provider = GeminiProvider(api_key=settings.GEMINI_API_KEY, model_name=settings.GEMINI_MODEL or "gemini-pro")
+                self.logger.info("Initialized Liquidity Agent with Gemini Provider")
+            except Exception as e:
+                self.logger.warning("Failed to init Gemini Provider, using Mock", error=str(e))
+        
+        return MarketAnalysisAgent(provider=provider)
     
     def _initialize_default_pools(self):
         """Initialize default liquidity pools for demo"""
@@ -526,14 +544,33 @@ class LiquidityAgent(BasePaymentAgent):
             self.logger.error("Liquidity rebalancing failed", error=str(e))
     
     async def _rebalance_pool(self, pool: LiquidityPool, reason: str):
-        """Rebalance a specific liquidity pool using Adaptive Strategy"""
+        """Rebalance a specific liquidity pool using Adaptive Strategy and AI Analysis"""
         try:
-            # 1. Update strategy with current usage (simulated usage since we don't have full history here yet)
-            # In a real app, this would happen in process_payment specific to that pool
+            # 1. Update strategy directly
             self.strategy.record_usage(pool.pool_id, pool.reserved_liquidity)
             
-            # 2. Evaluate Strategy
-            action = self.strategy.evaluate(pool.pool_id, pool.available_liquidity)
+            # 2. Consult AI Brain for Market Risk
+            # Extract symbol from currency pair (e.g., KES/UGX -> KES or UGX? usually the base or most volatile)
+            # For simplicity, we analyze the FROM currency or the pair string if supported
+            # Here we just pass the pair string as symbol
+            ai_analysis = await self.market_analyst.analyze_settlement_risk(
+                symbol=pool.currency_pair, 
+                settlement_amount_usd=float(pool.available_liquidity) # Approx value
+            )
+            
+            self.logger.info(
+                "AI Market Analysis Received",
+                pool_id=pool.pool_id,
+                risk_level=ai_analysis.get("risk_level"),
+                recommendation=ai_analysis.get("recommendation")
+            )
+            
+            # 3. Evaluate Strategy with AI Context
+            action = self.strategy.evaluate_with_ai(
+                pool.pool_id, 
+                pool.available_liquidity,
+                ai_analysis
+            )
             
             self.logger.info(
                 "Evaluated rebalancing strategy",

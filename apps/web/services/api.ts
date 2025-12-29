@@ -28,9 +28,29 @@ export interface BridgeResponse {
     bridge_fee_usd: number;
 }
 
+export interface ActivityItem {
+    id: string;
+    timestamp: string;
+    agent_id: string;
+    agent_type: string;
+    action_type: string;
+    message: string;
+    metadata: any;
+}
+
 export const api = {
+    // ... existing wallet ops ...
+    // ... existing agent ops ...
+
+    getAgentFeed: async (limit: number = 20): Promise<ActivityItem[]> => {
+        const res = await fetch(`${API_BASE}/agents/feed?limit=${limit}`);
+        if (!res.ok) throw new Error('Failed to fetch agent feed');
+        return res.json();
+    },
+
     // Wallet Operations
     getWalletBalance: async (address: string) => {
+
         const res = await fetch(`${API_BASE}/wallet/balance/${address}`);
         if (!res.ok) throw new Error('Failed to fetch balance');
         return res.json();
