@@ -108,6 +108,20 @@ export const api = {
         return res.json();
     },
 
+    approveRequest: async (requestId: string): Promise<void> => {
+        const res = await fetch(`${API_BASE}/agents/approve/${requestId}`, {
+            method: 'POST'
+        });
+        if (!res.ok) throw new Error('Failed to approve request');
+    },
+
+    rejectRequest: async (requestId: string): Promise<void> => {
+        const res = await fetch(`${API_BASE}/agents/reject/${requestId}`, {
+            method: 'POST'
+        });
+        if (!res.ok) throw new Error('Failed to reject request');
+    },
+
     // Multi-Chain Data
     getPolygonGas: async (): Promise<{ gas_price_gwei: number }> => {
         const res = await fetch(`${API_BASE}/chain/polygon/gas`);

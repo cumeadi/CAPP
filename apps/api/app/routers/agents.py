@@ -19,6 +19,7 @@ from applications.capp.capp.models.payments import (
     CrossBorderPayment, SenderInfo, RecipientInfo, 
     PaymentType, PaymentMethod, Currency, Country
 )
+from applications.capp.capp.services.approval import get_approval_service
 import uuid
 
 router = APIRouter(
@@ -32,8 +33,9 @@ router = APIRouter(
 _market_agent = None
 _compliance_agent = None
 
-# Global Config Store (In-Memory for MVP)
-app_config = schemas.AgentConfig()
+from .. import state
+
+# Initialize Agents Lazily
 
 def get_market_agent():
     global _market_agent
@@ -59,13 +61,12 @@ def get_compliance_agent():
 
 @router.get("/config", response_model=schemas.AgentConfig)
 async def get_config():
-    return app_config
+    return state.app_config
 
 @router.post("/config", response_model=schemas.AgentConfig)
 async def update_config(config: schemas.AgentConfig):
-    global app_config
-    app_config = config
-    return app_config
+    state.app_config = config
+    return state.app_config
 
 @router.get("/feed")
 async def get_activity_feed(limit: int = 20):
@@ -74,6 +75,19 @@ async def get_activity_feed(limit: int = 20):
     """
     return get_activity_log().get_recent_activities(limit)
 
+@router.post("/approve/{request_id}")
+async def approve_request(request_id: str):
+    success = get_approval_service().approve_request(request_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Request not found or already processed")
+    return {"status": "success", "message": "Request approved"}
+
+@router.post("/reject/{request_id}")
+async def reject_request(request_id: str):
+    success = get_approval_service().reject_request(request_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Request not found or already processed")
+    return {"status": "success", "message": "Request rejected"}
 
 @router.get("/market/analyze/{symbol}", response_model=schemas.MarketAnalysisResponse)
 async def analyze_market(symbol: str, db: Session = Depends(database.get_db)):
@@ -88,7 +102,7 @@ async def analyze_market(symbol: str, db: Session = Depends(database.get_db)):
             "AGGRESSIVE": " (Aggressive Mode: yielding seeking enabled)",
             "BALANCED": ""
         }
-        adjusted_reasoning = result.get("reasoning", "UNKNOWN") + risk_adjustment.get(app_config.risk_profile, "")
+        adjusted_reasoning = result.get("reasoning", "UNKNOWN") + risk_adjustment.get(state.app_config.risk_profile, "")
 
         # Persist Analysis to DB
         log_entry = models.MarketAnalysisLog(
@@ -174,7 +188,7 @@ async def check_compliance(request: schemas.ComplianceCheckRequest):
         
         # Configuration Logic: Aggressive mode might skip detailed KYC in simulation
         kyc_verified_sim = True
-        if app_config.risk_profile == "CONSERVATIVE":
+        if state.app_config.risk_profile == "CONSERVATIVE":
              # In conservative mode, we might simulate stricter checks (mock only)
              pass
         
@@ -208,10 +222,10 @@ async def check_compliance(request: schemas.ComplianceCheckRequest):
         # Call the correct method on the agent
         result = await agent.evaluate_transaction(payment)
         
-        # Config Override: If Fully Autonomous, we might auto-approve low risks (logic simulated)
+        # Config Override: If Sovereign, we might auto-approve low risks (logic simulated)
         reasoning = result.get("reasoning", "Check Failed")
-        if app_config.autonomy_level == "AUTONOMOUS":
-             reasoning += " [AUTO-APPROVED by Agent Protocol]"
+        if state.app_config.autonomy_level == "SOVEREIGN":
+             reasoning += " [AUTO-APPROVED by Sovereign Protocol]"
         
         return schemas.ComplianceCheckResponse(
             is_compliant=result.get("is_compliant", False),
