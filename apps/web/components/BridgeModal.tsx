@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ArrowRightLeft, CheckCircle, Clock } from 'lucide-react';
 import { api } from '@/services/api';
@@ -109,21 +109,38 @@ export default function BridgeModal({ isOpen, onClose, address }: BridgeModalPro
                                     {status ? (
                                         <div className="text-center py-8">
                                             <div className="w-16 h-16 bg-accent-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                                                {status.includes('Finaliz') || status.includes('Deposit') ? <CheckCircle className="w-8 h-8 text-accent-primary" /> : <Clock className="w-8 h-8 text-accent-primary" />}
+                                                {status.includes('Finaliz') || status.includes('Deposited') ? <CheckCircle className="w-8 h-8 text-accent-primary" /> : <Clock className="w-8 h-8 text-accent-primary" />}
                                             </div>
-                                            <h3 className="text-lg font-bold mb-2">{status}</h3>
+                                            <h3 className="text-lg font-bold mb-2">{status.split('!')[0]}!</h3>
 
-                                            {exitId && (
+                                            {/* Countdown Logic */}
+                                            {exitId && status.includes('Exit Started') && (
+                                                <div className="my-6 p-4 bg-bg-primary rounded-xl border border-border-medium">
+                                                    <div className="text-xs text-text-tertiary uppercase tracking-widest mb-2">Challenge Period Remaining</div>
+                                                    <div className="font-mono text-2xl font-bold text-accent-primary">
+                                                        <Countdown targetDate={new Date(status.split('ETA: ')[1])} onComplete={() => setStatus('READY_TO_FINALIZE')} />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {(exitId || status === ('READY_TO_FINALIZE')) && (
                                                 <div className="mt-6">
-                                                    <p className="text-sm text-text-secondary mb-4">
-                                                        Plasma exits require a challenge period.
-                                                    </p>
-                                                    <button
-                                                        onClick={handleFinalize}
-                                                        className="px-6 py-2 bg-bg-tertiary border border-accent-primary text-accent-primary rounded-lg text-sm font-bold uppercase hover:bg-accent-primary hover:text-bg-primary transition-all"
-                                                    >
-                                                        Finalize Exit
-                                                    </button>
+                                                    {(status === 'READY_TO_FINALIZE' || status.includes('Finalized')) ? (
+                                                        status.includes('Finalized') ? (
+                                                            <div className="text-sm text-color-success font-bold">Funds Released to L1 Wallet</div>
+                                                        ) : (
+                                                            <button
+                                                                onClick={handleFinalize}
+                                                                className="px-6 py-2 bg-accent-primary text-bg-primary rounded-lg text-sm font-bold uppercase hover:bg-white transition-all shadow-lg shadow-accent-primary/20"
+                                                            >
+                                                                Finalize Exit Now
+                                                            </button>
+                                                        )
+                                                    ) : (
+                                                        <div className="text-xs text-text-tertiary">
+                                                            Funds are locked until challenge period ends.
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
 
@@ -167,3 +184,33 @@ export default function BridgeModal({ isOpen, onClose, address }: BridgeModalPro
         </Portal>
     );
 }
+
+function Countdown({ targetDate, onComplete }: { targetDate: Date; onComplete: () => void }) {
+    const [timeLeft, setTimeLeft] = useState('');
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            const now = new Date().getTime();
+            const distance = targetDate.getTime() - now;
+
+            if (distance < 0) {
+                clearInterval(timer);
+                setTimeLeft("00:00:00");
+                onComplete();
+                return;
+            }
+
+            const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+            setTimeLeft(`${days > 0 ? days + 'd ' : ''}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [targetDate]);
+
+    return <span>{timeLeft || "Calculating..."}</span>;
+}
+

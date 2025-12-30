@@ -108,14 +108,23 @@ export default function Home() {
             });
 
             // Merge Live Feed
-            const formattedFeed = activityFeed.map(item => ({
-               id: item.id,
-               type: mapActionType(item.action_type),
-               title: mapAgentTitle(item.agent_type),
-               description: item.message,
-               time: new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-               meta: item.metadata?.risk_level ? { label: 'Risk', value: item.metadata.risk_level } : undefined
-            }));
+            const formattedFeed = activityFeed.map(item => {
+               const type = mapActionType(item.action_type);
+               // IMPORTANT: For actionable items, we MUST use the request_id from metadata, 
+               // otherwise the API call with fail with 404 because it expects the Request UUID, not the Log UUID.
+               const id = (type === 'APPROVAL' || type === 'OPPORTUNITY') && item.metadata?.request_id
+                  ? item.metadata.request_id
+                  : item.id;
+
+               return {
+                  id: id,
+                  type: type,
+                  title: mapAgentTitle(item.agent_type),
+                  description: item.message,
+                  time: new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                  meta: item.metadata?.risk_level ? { label: 'Risk', value: item.metadata.risk_level } : undefined
+               };
+            });
 
             setDecisionFeed(prev => {
                // Simple merge: Keep USER messages, replace others with backend source
@@ -142,6 +151,7 @@ export default function Home() {
       if (action === 'REBALANCE') return 'REBALANCE';
       if (action === 'REVIEW') return 'APPROVAL';
       if (action === 'APPROVAL') return 'APPROVAL'; // Direct mapping
+      if (action === 'OPPORTUNITY') return 'OPPORTUNITY';
       if (action === 'ERROR') return 'ERROR';
       return 'ANALYSIS';
    }
@@ -220,7 +230,7 @@ export default function Home() {
                            ));
                         } catch (e) {
                            console.error("Approval failed", e);
-                           alert("Failed to approve request");
+                           alert(`Failed to approve request (${id}). Check console for details.`);
                         }
                      }}
                      onReject={async (id) => {
@@ -229,7 +239,7 @@ export default function Home() {
                            setDecisionFeed(prev => prev.filter(item => item.id !== id));
                         } catch (e) {
                            console.error("Rejection failed", e);
-                           alert("Failed to reject request");
+                           alert(`Failed to reject request (${id})`);
                         }
                      }}
                   />
