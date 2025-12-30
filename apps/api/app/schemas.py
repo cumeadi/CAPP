@@ -107,7 +107,7 @@ class TreasuryStatus(BaseModel):
 # Configuration Schemas
 class AgentConfig(BaseModel):
     risk_profile: str = "BALANCED" # CONSERVATIVE, BALANCED, AGGRESSIVE
-    autonomy_level: str = "HUMAN_LOOP" # HUMAN_LOOP, AUTONOMOUS
+    autonomy_level: str = "COPILOT" # COPILOT, GUARDED, SOVEREIGN
     hedge_threshold: int = 5
     network: str = "TESTNET"
 

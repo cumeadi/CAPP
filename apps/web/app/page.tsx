@@ -5,8 +5,7 @@ import { motion } from 'framer-motion';
 import { useAccount } from 'wagmi';
 import TreasuryCard from '@/components/TreasuryCard';
 import AiPanel from '@/components/AiPanel';
-import TransferForm from '@/components/TransferForm';
-import Bridge from '@/components/Bridge';
+import AutonomyDial, { AutonomyLevel } from '@/components/AutonomyDial';
 import { api } from '@/services/api';
 
 // Mock Data Types
@@ -27,7 +26,7 @@ export default function Home() {
       reasoning: "Initializing analysis..."
    });
 
-   const [view, setView] = useState<'DASHBOARD' | 'TRANSFER' | 'BRIDGE'>('DASHBOARD');
+
    const [isAuthenticated, setIsAuthenticated] = useState(false);
 
    const [balance, setBalance] = useState({
@@ -38,8 +37,8 @@ export default function Home() {
       starknet: 0
    });
 
-   // Auto-Hedge Toggle State
-   const [autoHedge, setAutoHedge] = useState(true);
+   // Autonomy State
+   const [autonomyLevel, setAutonomyLevel] = useState<AutonomyLevel>('GUARDED');
 
    // Feed State
    const [decisionFeed, setDecisionFeed] = useState<Array<{
@@ -142,6 +141,7 @@ export default function Home() {
       if (action === 'DECISION' || action === 'CHAT') return 'ANALYSIS';
       if (action === 'REBALANCE') return 'REBALANCE';
       if (action === 'REVIEW') return 'APPROVAL';
+      if (action === 'APPROVAL') return 'APPROVAL'; // Direct mapping
       if (action === 'ERROR') return 'ERROR';
       return 'ANALYSIS';
    }
@@ -152,6 +152,24 @@ export default function Home() {
       if (agentType === 'LIQUIDITY') return 'LIQUIDITY MANAGER';
       return agentType;
    }
+
+   // Handle Autonomy Change
+   const handleAutonomyChange = async (level: AutonomyLevel) => {
+      setAutonomyLevel(level);
+      try {
+         // Map UI level to Backend level
+         // UI: COPILOT, GUARDED, SOVEREIGN
+         // Backend: COPILOT, GUARDED, SOVEREIGN
+         await api.updateAgentConfig({
+            risk_profile: 'BALANCED', // TODO: Fetch current
+            autonomy_level: level as any,
+            hedge_threshold: 5, // TODO: Fetch current
+            network: 'TESTNET'
+         });
+      } catch (e) {
+         console.error("Failed to update autonomy", e);
+      }
+   };
 
    return (
       <div className="min-h-screen relative font-mono text-text-primary">
@@ -173,16 +191,9 @@ export default function Home() {
                </div>
 
                <div className="flex items-center gap-4">
-                  <button
-                     onClick={() => setAutoHedge(!autoHedge)}
-                     className={`flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-medium uppercase tracking-wider transition-all ${autoHedge
-                        ? 'bg-bg-card border-border-medium text-text-primary shadow-[0_0_15px_rgba(0,255,163,0.1)]'
-                        : 'bg-bg-tertiary border-border-subtle text-text-tertiary'
-                        }`}
-                  >
-                     <div className={`w-2 h-2 rounded-full transition-all ${autoHedge ? 'bg-accent-primary animate-pulse' : 'bg-text-tertiary'}`}></div>
-                     Auto-Hedge {autoHedge ? 'ON' : 'OFF'}
-                  </button>
+                  <div className="w-auto min-w-[320px]">
+                     <AutonomyDial value={autonomyLevel} onChange={handleAutonomyChange} />
+                  </div>
                </div>
             </header>
 
@@ -192,22 +203,37 @@ export default function Home() {
                {/* Left Column: Treasury Overview & Actions */}
                <div className="flex flex-col gap-8">
                   <TreasuryCard balance={balance} address={address || "Wait..."} />
-
-                  {/* Action Tabs */}
-                  <div className="flex gap-4 border-b border-border-subtle pb-4">
-                     <button onClick={() => setView('DASHBOARD')} className={`text-sm font-medium transition-colors ${view === 'DASHBOARD' ? 'text-accent-primary' : 'text-text-tertiary hover:text-text-primary'}`}>Overview</button>
-                     <button onClick={() => setView('BRIDGE')} className={`text-sm font-medium transition-colors ${view === 'BRIDGE' ? 'text-accent-primary' : 'text-text-tertiary hover:text-text-primary'}`}>Liquidity Bridge (Starknet)</button>
-                  </div>
-
-                  {view === 'BRIDGE' && (
-                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                        <Bridge />
-                     </motion.div>
-                  )}
                </div>
 
-               {/* Right Column: AI Intelligence */}
-               <AiPanel marketStatus={marketStatus} decisionFeed={decisionFeed} onChat={handleAiAction} />
+               {/* Right Column: AI Panel */}
+               <div>
+                  <AiPanel
+                     marketStatus={marketStatus}
+                     decisionFeed={decisionFeed}
+                     onChat={handleAiAction}
+                     onApprove={async (id) => {
+                        try {
+                           await api.approveRequest(String(id));
+                           // Optimistically update to show processing/approved
+                           setDecisionFeed(prev => prev.map(item =>
+                              item.id === id ? { ...item, type: 'REBALANCE', title: 'APPROVED', description: 'Agent authorized. Processing...' } : item
+                           ));
+                        } catch (e) {
+                           console.error("Approval failed", e);
+                           alert("Failed to approve request");
+                        }
+                     }}
+                     onReject={async (id) => {
+                        try {
+                           await api.rejectRequest(String(id));
+                           setDecisionFeed(prev => prev.filter(item => item.id !== id));
+                        } catch (e) {
+                           console.error("Rejection failed", e);
+                           alert("Failed to reject request");
+                        }
+                     }}
+                  />
+               </div>
 
             </div>
          </div>

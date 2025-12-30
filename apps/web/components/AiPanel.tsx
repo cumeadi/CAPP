@@ -21,9 +21,11 @@ interface AiPanelProps {
         };
     }>;
     onChat: (query: string) => void;
+    onApprove?: (id: string | number) => void;
+    onReject?: (id: string | number) => void;
 }
 
-export default function AiPanel({ marketStatus, decisionFeed, onChat }: AiPanelProps) {
+export default function AiPanel({ marketStatus, decisionFeed, onChat, onApprove, onReject }: AiPanelProps) {
     // Helper to determine radar color based on risk
     const getRadarColor = () => {
         if (marketStatus.volatility === 'HIGH') return 'text-accent-warning';
@@ -52,37 +54,74 @@ export default function AiPanel({ marketStatus, decisionFeed, onChat }: AiPanelP
 
                 <div className="flex-1 overflow-y-auto space-y-6 pr-2 custom-scrollbar relative">
                     {decisionFeed.map((item) => (
-                        <div key={item.id} className={`pl-4 border-l-2 relative ${item.type === 'REBALANCE' ? 'border-color-success' :
-                                item.type === 'ANALYSIS' ? 'border-color-info' :
-                                    item.type === 'PAYMENT' ? 'border-accent-secondary' :
-                                        item.type === 'ERROR' ? 'border-accent-warning' :
-                                            'border-accent-primary'
+                        <div key={item.id} className={`pl-4 border-l-2 relative ${item.type === 'APPROVAL' ? 'border-accent-primary bg-accent-primary/5 p-4 rounded-r-xl border-l-4' :
+                                item.type === 'REBALANCE' ? 'border-color-success' :
+                                    item.type === 'ANALYSIS' ? 'border-color-info' :
+                                        item.type === 'PAYMENT' ? 'border-accent-secondary' :
+                                            item.type === 'ERROR' ? 'border-accent-warning' :
+                                                'border-accent-primary'
                             }`}>
-                            <div className="flex justify-between items-start mb-1">
-                                <div className="flex items-center gap-2">
-                                    {/* Icon Indicator */}
-                                    {item.type === 'PAYMENT' && <Wallet className="w-3 h-3 text-accent-secondary" />}
-                                    {item.type === 'ERROR' && <XCircle className="w-3 h-3 text-accent-warning" />}
 
-                                    <div className={`text-[10px] font-bold uppercase tracking-widest ${item.type === 'REBALANCE' ? 'text-color-success' :
-                                            item.type === 'ANALYSIS' ? 'text-color-info' :
-                                                item.type === 'PAYMENT' ? 'text-accent-secondary' :
-                                                    item.type === 'ERROR' ? 'text-accent-warning' :
-                                                        'text-accent-primary'
-                                        }`}>{item.title}</div>
-                                </div>
-                                <div className="text-[10px] text-text-tertiary">{item.time}</div>
-                            </div>
-                            <div className="text-xs text-text-secondary leading-relaxed mb-2">
-                                {item.description}
-                            </div>
-                            {item.meta && (
-                                <div className="flex gap-4 text-[10px] text-text-tertiary">
-                                    <div className="flex items-center gap-1">
-                                        <Activity className="w-3 h-3" />
-                                        {item.meta.label}: {item.meta.value}
+                            {/* Special Layout for Permission Cards */}
+                            {item.type === 'APPROVAL' ? (
+                                <div>
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <ShieldCheck className="w-4 h-4 text-accent-primary animate-pulse" />
+                                            <div className="text-xs font-bold uppercase tracking-widest text-accent-primary">Permission Required</div>
+                                        </div>
+                                        <div className="text-[10px] text-text-tertiary">{item.time}</div>
+                                    </div>
+                                    <div className="text-sm font-semibold text-text-primary mb-1">{item.title}</div>
+                                    <div className="text-xs text-text-secondary leading-relaxed mb-4">
+                                        {item.description}
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => onApprove?.(item.id)}
+                                            className="flex-1 bg-accent-primary text-bg-primary text-xs font-bold uppercase py-2 rounded hover:bg-opacity-90 transition-all"
+                                        >
+                                            Approve
+                                        </button>
+                                        <button
+                                            onClick={() => onReject?.(item.id)}
+                                            className="flex-1 bg-bg-tertiary border border-border-medium text-text-secondary text-xs font-bold uppercase py-2 rounded hover:text-text-primary hover:border-text-tertiary transition-all"
+                                        >
+                                            Reject
+                                        </button>
                                     </div>
                                 </div>
+                            ) : (
+                                /* Standard Feed Item */
+                                <>
+                                    <div className="flex justify-between items-start mb-1">
+                                        <div className="flex items-center gap-2">
+                                            {/* Icon Indicator */}
+                                            {item.type === 'PAYMENT' && <Wallet className="w-3 h-3 text-accent-secondary" />}
+                                            {item.type === 'ERROR' && <XCircle className="w-3 h-3 text-accent-warning" />}
+
+                                            <div className={`text-[10px] font-bold uppercase tracking-widest ${item.type === 'REBALANCE' ? 'text-color-success' :
+                                                item.type === 'ANALYSIS' ? 'text-color-info' :
+                                                    item.type === 'PAYMENT' ? 'text-accent-secondary' :
+                                                        item.type === 'ERROR' ? 'text-accent-warning' :
+                                                            'text-accent-primary'
+                                                }`}>{item.title}</div>
+                                        </div>
+                                        <div className="text-[10px] text-text-tertiary">{item.time}</div>
+                                    </div>
+                                    <div className="text-xs text-text-secondary leading-relaxed mb-2">
+                                        {item.description}
+                                    </div>
+                                    {item.meta && (
+                                        <div className="flex gap-4 text-[10px] text-text-tertiary">
+                                            <div className="flex items-center gap-1">
+                                                <Activity className="w-3 h-3" />
+                                                {item.meta.label}: {item.meta.value}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     ))}

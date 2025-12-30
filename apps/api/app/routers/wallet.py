@@ -18,6 +18,8 @@ from applications.capp.capp.models.payments import (
     PaymentBatch, CrossBorderPayment, PaymentStatus, Currency,
     PaymentType, PaymentMethod, SenderInfo, RecipientInfo, Country, SettlementBatch
 )
+from .. import state
+from applications.capp.capp.services.approval import get_approval_service
 
 router = APIRouter(
     prefix="/wallet",
@@ -97,6 +99,32 @@ async def send_transaction(request: schemas.TransactionRequest):
     """
     try:
         agent = get_settlement_agent()
+        
+        # Autonomy Checks
+        requires_approval = False
+        approval_reason = ""
+        
+        if state.app_config.autonomy_level == "COPILOT":
+            requires_approval = True
+            approval_reason = "Copilot Mode Active: All transactions require approval."
+        elif state.app_config.autonomy_level == "GUARDED":
+            # Example threshold: $1000
+            if request.amount > 1000:
+                requires_approval = True
+                approval_reason = f"Guarded Mode: Amount {request.amount} exceeds auto-limit of 1000."
+
+        if requires_approval:
+            req_id = get_approval_service().request_approval(
+                agent_id="settlement_agent",
+                action_type="PAYMENT", # Special type that triggers Payment Card in UI
+                description=approval_reason + f" Send {request.amount} to {request.recipient_name}",
+                payload=request.dict()
+            )
+            return schemas.TransactionResponse(
+                tx_hash="WAITING_FOR_APPROVAL",
+                status="PENDING_APPROVAL",
+                timestamp=datetime.utcnow()
+            )
         
         # Determine Enums safely
         try:

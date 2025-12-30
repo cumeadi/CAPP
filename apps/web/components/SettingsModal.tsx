@@ -158,26 +158,14 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                                         </div>
                                                     </section>
 
-                                                    {/* Autonomy Level */}
+                                                    {/* Operational Limits */}
                                                     <section>
                                                         <h4 className="flex items-center gap-2 text-sm font-bold text-text-secondary uppercase tracking-widest mb-4">
                                                             <Bot className="w-4 h-4 text-accent-primary" />
-                                                            Agent Autonomy
+                                                            Operational Limits
                                                         </h4>
-                                                        <div className="bg-bg-tertiary rounded-xl p-1 flex mb-4">
-                                                            <button
-                                                                onClick={() => setAutonomy('HUMAN_LOOP')}
-                                                                className={`flex-1 py-2 text-xs font-bold uppercase tracking-wide rounded-lg transition-all ${autonomy === 'HUMAN_LOOP' ? 'bg-accent-primary text-bg-primary shadow-lg' : 'text-text-tertiary hover:text-text-primary'}`}
-                                                            >
-                                                                Human Review
-                                                            </button>
-                                                            <button
-                                                                onClick={() => setAutonomy('AUTONOMOUS')}
-                                                                className={`flex-1 py-2 text-xs font-bold uppercase tracking-wide rounded-lg transition-all ${autonomy === 'AUTONOMOUS' ? 'bg-accent-danger text-white shadow-lg shadow-accent-danger/20' : 'text-text-tertiary hover:text-text-primary'}`}
-                                                            >
-                                                                Fully Autonomous
-                                                            </button>
-                                                        </div>
+
+                                                        {/* Legacy Autonomy Toggle Removed - Now controlled via Main Dashboard Dial */}
 
                                                         <div className="space-y-4">
                                                             <div>
