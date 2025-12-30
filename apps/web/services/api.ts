@@ -155,6 +155,14 @@ export const api = {
         return res.json();
     },
 
+    scoutOpportunities: async () => {
+        const res = await fetch(`${API_BASE}/agents/opportunities/scout`, {
+            method: 'POST'
+        });
+        if (!res.ok) throw new Error('Failed to scout opportunities');
+        return res.json();
+    },
+
     // Bridge / Plasma
     bridgeDeposit: async (amount: number, userAddress: string, token: string = "USDC") => {
         const res = await fetch(`${API_BASE}/bridge/deposit`, {

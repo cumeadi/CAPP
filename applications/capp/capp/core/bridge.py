@@ -18,7 +18,7 @@ class PlasmaBridgeService:
     
     def __init__(self):
         self.exits = {} # store active exits: {exit_id: ExitData}
-        self.challenge_period = timedelta(minutes=1) # Mock: 1 minute challenge period for demo (vs 7 days)
+        self.challenge_period = timedelta(seconds=30) # Mock: 30 seconds challenge period for demo (vs 7 days)
 
     async def deposit(self, amount: float, user_address: str, token: str = "USDC") -> Dict[str, Any]:
         """
@@ -80,6 +80,10 @@ class PlasmaBridgeService:
             
         exit_data = self.exits[exit_id]
         now = datetime.utcnow()
+        
+        # Calculate time remaining
+        remaining = (exit_data["eta"] - now).total_seconds()
+        exit_data["time_remaining_seconds"] = max(0, remaining)
         
         if exit_data["status"] == "FINALIZED":
              return exit_data

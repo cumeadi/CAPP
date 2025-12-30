@@ -38,11 +38,11 @@ class ApprovalService:
         self.pending_requests[req_id] = request
         
         # Log to Activity Feed so it shows up in UI
-        # We use action_type='APPROVAL' to trigger the Permission Card in the UI
+        # We use the passed action_type (e.g. OPPORTUNITY or APPROVAL) to trigger the correct Card in UI
         get_activity_log().log_activity(
             agent_id=agent_id,
             agent_type="system", 
-            action_type="APPROVAL", 
+            action_type=action_type, 
             message=description,
             metadata={
                 "request_id": req_id,

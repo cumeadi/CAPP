@@ -251,3 +251,35 @@ async def check_compliance(request: schemas.ComplianceCheckRequest):
             message=f"Transaction {status}: {reasoning[:50]}...",
             metadata=result
         )
+@router.post("/opportunities/scout")
+async def scout_opportunities():
+    """
+    Proactively scout for yield opportunities.
+    In a real system, this would analyze market data.
+    """
+    # 1. Mock finding an opportunity
+    opportunity = {
+        "protocol": "Aave V3",
+        "chain": "Arbitrum",
+        "asset": "USDC",
+        "apy": 5.2,
+        "strategy": "Lending",
+        "risk": "LOW"
+    }
+
+    # 2. Create an approval request for this opportunity
+    req_id = get_approval_service().request_approval(
+        agent_id="market_scout",
+        action_type="OPPORTUNITY",
+        description=f"Move 1000 USDC to {opportunity['protocol']} on {opportunity['chain']} for {opportunity['apy']}% APY",
+        payload={
+             "type": "YIELD_FARM",
+             "asset": opportunity['asset'],
+             "amount": 1000,
+             "protocol": opportunity['protocol'],
+             "chain": opportunity['chain'],
+             "details": opportunity
+        }
+    )
+
+    return {"status": "found", "opportunity": opportunity, "request_id": req_id}
