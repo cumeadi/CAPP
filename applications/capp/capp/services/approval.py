@@ -3,6 +3,8 @@ from typing import Dict, Any, Optional
 import uuid
 import structlog
 from pydantic import BaseModel
+from eth_account import Account
+from eth_account.messages import encode_defunct
 from .activity_log import get_activity_log
 
 logger = structlog.get_logger(__name__)
@@ -14,7 +16,9 @@ class ApprovalRequest(BaseModel):
     action_type: str
     description: str
     payload: Dict[str, Any]
-    status: str = "PENDING" # PENDING, APPROVED, REJECTED, EXECUTED
+    status: str = "PENDING"
+    signature: Optional[str] = None
+    signer_address: Optional[str] = None
 
 class ApprovalService:
     _instance = None
@@ -37,8 +41,6 @@ class ApprovalService:
         )
         self.pending_requests[req_id] = request
         
-        # Log to Activity Feed so it shows up in UI
-        # We use the passed action_type (e.g. OPPORTUNITY or APPROVAL) to trigger the correct Card in UI
         get_activity_log().log_activity(
             agent_id=agent_id,
             agent_type="system", 
@@ -53,23 +55,51 @@ class ApprovalService:
         logger.info("Approval Requested", req_id=req_id, agent=agent_id)
         return req_id
 
-    def approve_request(self, request_id: str) -> bool:
-        if request_id in self.pending_requests:
-            self.pending_requests[request_id].status = "APPROVED"
-            
-            req = self.pending_requests[request_id]
-            logger.info("Request Approved", req_id=request_id)
-            
-            # Log update to feed
-            get_activity_log().log_activity(
-                agent_id=req.agent_id,
-                agent_type="system",
-                action_type="DECISION",
-                message=f"Approved: {req.description}",
-                metadata={"request_id": request_id, "status": "APPROVED"}
-            )
-            return True
-        return False
+    def approve_request(self, request_id: str, signature: str = None) -> bool:
+        if request_id not in self.pending_requests:
+            return False
+
+        req = self.pending_requests[request_id]
+
+        # Phase 3: Enforce Signature Verification
+        if signature:
+            try:
+                # Recover address from signature
+                # Message that was signed (must match frontend)
+                msg = f"Approve Request: {request_id}"
+                message = encode_defunct(text=msg)
+                signer = Account.recover_message(message, signature=signature)
+                
+                req.signature = signature
+                req.signer_address = signer
+                logger.info("Signature Verified", signer=signer, req_id=request_id)
+                
+                # In production, check if 'signer' is an authorized admin
+                # For now, we accept any valid signature
+                
+            except Exception as e:
+                logger.error("Invalid Signature", error=str(e))
+                return False
+        else:
+            # For backward compatibility during migration, or dev mode
+            logger.warning("Unsigned Approval Attempt", req_id=request_id)
+            # UNCOMMENT TO ENFORCE: return False
+
+        req.status = "APPROVED"
+        logger.info("Request Approved", req_id=request_id)
+        
+        get_activity_log().log_activity(
+            agent_id=req.agent_id,
+            agent_type="system",
+            action_type="DECISION",
+            message=f"Approved: {req.description}",
+            metadata={
+                "request_id": request_id, 
+                "status": "APPROVED",
+                "signer": req.signer_address
+            }
+        )
+        return True
 
     def reject_request(self, request_id: str) -> bool:
         if request_id in self.pending_requests:
@@ -78,7 +108,6 @@ class ApprovalService:
             req = self.pending_requests[request_id]
             logger.info("Request Rejected", req_id=request_id)
 
-            # Log update to feed
             get_activity_log().log_activity(
                 agent_id=req.agent_id,
                 agent_type="system",

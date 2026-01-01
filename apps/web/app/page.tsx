@@ -14,6 +14,8 @@ interface MarketStatus {
    volatility: string;
    aptPrice: number;
    reasoning: string;
+   top_apy?: number;
+   active_protocols?: string[];
 }
 
 export default function Home() {
@@ -39,6 +41,8 @@ export default function Home() {
 
    // Autonomy State
    const [autonomyLevel, setAutonomyLevel] = useState<AutonomyLevel>('GUARDED');
+
+   const [systemHealth, setSystemHealth] = useState<{ status: string }>({ status: 'unknown' });
 
    // Feed State
    const [decisionFeed, setDecisionFeed] = useState<Array<{
@@ -83,12 +87,15 @@ export default function Home() {
       const fetchData = async () => {
          try {
             const walletAddress = address || "0x123";
-            const [balanceData, marketData, polygonGas, activityFeed] = await Promise.all([
+            const [balanceData, marketData, polygonGas, activityFeed, health] = await Promise.all([
                api.getWalletBalance(walletAddress),
                api.analyzeMarket('APT'),
                api.getPolygonGas().catch(() => ({ gas_price_gwei: 0 })),
-               api.getAgentFeed(10)
+               api.getAgentFeed(10),
+               api.getSystemStatus().catch(() => ({ status: 'offline' }))
             ]);
+
+            setSystemHealth(health);
 
             setBalance({
                totalUsd: (balanceData.balance_apt * 10.5) + balanceData.balance_usdc + (balanceData.balance_eth * 2800) + ((balanceData.balance_starknet || 0) * 2800),
@@ -136,6 +143,7 @@ export default function Home() {
 
          } catch (e) {
             console.error(e);
+            setSystemHealth({ status: 'offline' });
          }
       };
 
@@ -195,7 +203,18 @@ export default function Home() {
                      ₵
                   </div>
                   <div>
-                     <div className="font-display text-2xl font-bold tracking-tight">CAPP Treasury</div>
+                     <div className="font-display text-2xl font-bold tracking-tight flex items-center gap-3">
+                        CAPP Treasury
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${systemHealth.status === 'healthy' ? 'bg-color-success/10 text-color-success border border-color-success/30' :
+                              systemHealth.status === 'degraded' ? 'bg-accent-warning/10 text-accent-warning border border-accent-warning/30' :
+                                 'bg-text-tertiary/10 text-text-tertiary border border-text-tertiary/30'
+                           }`}>
+                           <span className={`w-1.5 h-1.5 rounded-full mr-1 ${systemHealth.status === 'healthy' ? 'bg-color-success animate-pulse' :
+                                 systemHealth.status === 'degraded' ? 'bg-accent-warning' : 'bg-text-tertiary'
+                              }`} />
+                           {systemHealth.status === 'healthy' ? 'System Online' : systemHealth.status}
+                        </span>
+                     </div>
                      <div className="text-xs text-text-tertiary uppercase tracking-widest">Autonomous Asset Management</div>
                   </div>
                </div>
@@ -222,16 +241,11 @@ export default function Home() {
                      decisionFeed={decisionFeed}
                      onChat={handleAiAction}
                      onApprove={async (id) => {
-                        try {
-                           await api.approveRequest(String(id));
-                           // Optimistically update to show processing/approved
-                           setDecisionFeed(prev => prev.map(item =>
-                              item.id === id ? { ...item, type: 'REBALANCE', title: 'APPROVED', description: 'Agent authorized. Processing...' } : item
-                           ));
-                        } catch (e) {
-                           console.error("Approval failed", e);
-                           alert(`Failed to approve request (${id}). Check console for details.`);
-                        }
+                        // Optimistically update to show processing/approved
+                        // Note: API call is handled inside AiPanel with signature
+                        setDecisionFeed(prev => prev.map(item =>
+                           item.id === id ? { ...item, type: 'REBALANCE', title: 'APPROVED', description: 'Agent authorized. Processing...' } : item
+                        ));
                      }}
                      onReject={async (id) => {
                         try {

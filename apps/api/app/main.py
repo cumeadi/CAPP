@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import engine, Base
-from .routers import wallet, agents, chain_data, bridge, starknet, routing
+from .routers import wallet, agents, chain_data, bridge, starknet, routing, system
 
 # Create DB Tables
 Base.metadata.create_all(bind=engine)
@@ -34,6 +34,13 @@ async def startup_event():
     await init_aptos_client()
     await init_polygon_client()
 
+    # Start Chain Listener (Background)
+    from applications.capp.capp.services.chain_listener import ChainListenerService
+    import asyncio
+    listener = ChainListenerService()
+    asyncio.create_task(listener.start_listening())
+    print("Chain Listener Background Task Started")
+
 # CORS Configuration
 origins = [
     "http://localhost:3000",
@@ -54,6 +61,7 @@ app.include_router(chain_data.router)
 app.include_router(bridge.router)
 app.include_router(starknet.router)
 app.include_router(routing.router)
+app.include_router(system.router)
 
 @app.get("/")
 async def root():
