@@ -8,6 +8,13 @@ export interface MarketAnalysisResponse {
     timestamp: string;
 }
 
+export interface MarketStatusResponse {
+    volatility: string;
+    reasoning: string;
+    top_apy: number;
+    active_protocols: string[];
+}
+
 export interface ComplianceCheckResponse {
     is_compliant: boolean;
     risk_score: number;
@@ -16,7 +23,7 @@ export interface ComplianceCheckResponse {
 
 export interface AgentConfig {
     risk_profile: 'CONSERVATIVE' | 'BALANCED' | 'AGGRESSIVE';
-    autonomy_level: 'HUMAN_LOOP' | 'AUTONOMOUS';
+    autonomy_level: 'HUMAN_LOOP' | 'AUTONOMOUS' | 'COPILOT' | 'GUARDED' | 'SOVEREIGN';
     hedge_threshold: number;
     network: string;
 }
@@ -39,9 +46,6 @@ export interface ActivityItem {
 }
 
 export const api = {
-    // ... existing wallet ops ...
-    // ... existing agent ops ...
-
     getAgentFeed: async (limit: number = 20): Promise<ActivityItem[]> => {
         const res = await fetch(`${API_BASE}/agents/feed?limit=${limit}`);
         if (!res.ok) throw new Error('Failed to fetch agent feed');
@@ -50,13 +54,32 @@ export const api = {
 
     // Wallet Operations
     getWalletBalance: async (address: string) => {
-
         const res = await fetch(`${API_BASE}/wallet/balance/${address}`);
         if (!res.ok) throw new Error('Failed to fetch balance');
         return res.json();
     },
 
+    executeTransfer: async (to: string, amount: number, targetChain?: string): Promise<{ tx_hash: string }> => {
+        const res = await fetch(`${API_BASE}/wallet/send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                to_address: to,
+                amount: amount,
+                target_chain: targetChain
+            })
+        });
+        if (!res.ok) throw new Error('Transfer failed');
+        return res.json();
+    },
+
     // Agent Operations
+    getMarketStatus: async (): Promise<MarketStatusResponse> => {
+        const res = await fetch(`${API_BASE}/agents/market/status`);
+        if (!res.ok) throw new Error('Failed to fetch market status');
+        return res.json();
+    },
+
     analyzeMarket: async (symbol: string = 'APT'): Promise<MarketAnalysisResponse> => {
         const res = await fetch(`${API_BASE}/agents/market/analyze/${symbol}`);
         if (!res.ok) throw new Error('Failed to fetch market analysis');
@@ -77,20 +100,6 @@ export const api = {
         return res.json();
     },
 
-    executeTransfer: async (to: string, amount: number, targetChain?: string): Promise<{ tx_hash: string }> => {
-        const res = await fetch(`${API_BASE}/wallet/send`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                to_address: to,
-                amount: amount,
-                target_chain: targetChain
-            })
-        });
-        if (!res.ok) throw new Error('Transfer failed');
-        return res.json();
-    },
-
     // Configuration
     getAgentConfig: async (): Promise<AgentConfig> => {
         const res = await fetch(`${API_BASE}/agents/config`);
@@ -108,9 +117,11 @@ export const api = {
         return res.json();
     },
 
-    approveRequest: async (requestId: string): Promise<void> => {
+    approveRequest: async (requestId: string, signature: string): Promise<void> => {
         const res = await fetch(`${API_BASE}/agents/approve/${requestId}`, {
-            method: 'POST'
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ signature })
         });
         if (!res.ok) throw new Error('Failed to approve request');
     },
@@ -195,8 +206,16 @@ export const api = {
             throw new Error(err.detail || 'Finalize failed');
         }
         return res.json();
+    },
+
+    getSystemStatus: async () => {
+        const res = await fetch(`${API_BASE}/system/health`);
+        if (!res.ok) throw new Error('Failed to fetch system status');
+        return res.json();
     }
 };
+
+
 
 export interface ChatResponse {
     response: string;

@@ -20,12 +20,16 @@ from applications.capp.capp.models.payments import (
     PaymentType, PaymentMethod, Currency, Country
 )
 from applications.capp.capp.services.approval import get_approval_service
+from applications.capp.capp.services.defillama import DefiLlamaService
 import uuid
 
 router = APIRouter(
     prefix="/agents",
     tags=["agents"]
 )
+
+# Initialize Services
+_defi_service = DefiLlamaService()
 
 # ... (init code remains same) ...
 
@@ -75,11 +79,19 @@ async def get_activity_feed(limit: int = 20):
     """
     return get_activity_log().get_recent_activities(limit)
 
+@router.get("/market/status")
+async def get_market_status():
+    """
+    Get aggregated market status (Volatility, Top APY, Active Protocols)
+    backed by real DefiLlama data.
+    """
+    return await _defi_service.get_market_status()
+
 @router.post("/approve/{request_id}")
-async def approve_request(request_id: str):
-    success = get_approval_service().approve_request(request_id)
+async def approve_request(request_id: str, payload: schemas.SignedApprovalRequest):
+    success = get_approval_service().approve_request(request_id, signature=payload.signature)
     if not success:
-        raise HTTPException(status_code=404, detail="Request not found or already processed")
+        raise HTTPException(status_code=404, detail="Request not found or invalid signature")
     return {"status": "success", "message": "Request approved"}
 
 @router.post("/reject/{request_id}")
@@ -254,24 +266,38 @@ async def check_compliance(request: schemas.ComplianceCheckRequest):
 @router.post("/opportunities/scout")
 async def scout_opportunities():
     """
-    Proactively scout for yield opportunities.
-    In a real system, this would analyze market data.
+    Proactively scout for yield opportunities using DefiLlama.
     """
-    # 1. Mock finding an opportunity
-    opportunity = {
-        "protocol": "Aave V3",
-        "chain": "Arbitrum",
-        "asset": "USDC",
-        "apy": 5.2,
-        "strategy": "Lending",
-        "risk": "LOW"
-    }
+    # 1. Fetch Real Opportunities
+    opportunities = await _defi_service.get_yield_opportunities()
+    
+    if not opportunities:
+        # Fallback if API fails
+        opportunity = {
+            "protocol": "Aave V3",
+            "chain": "Arbitrum",
+            "asset": "USDC",
+            "apy": 5.2,
+            "strategy": "Lending",
+            "risk": "LOW"
+        }
+    else:
+        # Pick the best one
+        best = opportunities[0]
+        opportunity = {
+            "protocol": best["protocol"],
+            "chain": best["chain"],
+            "asset": best["asset"],
+            "apy": float(best["apy"]), # Ensure float
+            "strategy": "Lending",
+            "risk": best["risk"]
+        }
 
     # 2. Create an approval request for this opportunity
     req_id = get_approval_service().request_approval(
         agent_id="market_scout",
         action_type="OPPORTUNITY",
-        description=f"Move 1000 USDC to {opportunity['protocol']} on {opportunity['chain']} for {opportunity['apy']}% APY",
+        description=f"Move 1000 USDC to {opportunity['protocol']} on {opportunity['chain']} for {opportunity['apy']:.2f}% APY",
         payload={
              "type": "YIELD_FARM",
              "asset": opportunity['asset'],

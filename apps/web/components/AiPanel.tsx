@@ -3,12 +3,15 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, CheckCircle, AlertTriangle, Activity, RefreshCw, Radar, ShieldCheck, Wallet, XCircle } from 'lucide-react';
+import { useSignMessage } from 'wagmi';
 
 interface AiPanelProps {
     marketStatus: {
         sentiment: string;
         volatility: string;
         reasoning: string;
+        top_apy?: number;
+        active_protocols?: string[];
     };
     decisionFeed: Array<{
         id: string | number;
@@ -35,26 +38,37 @@ export default function AiPanel({ marketStatus, decisionFeed, onChat, onApprove,
     };
 
     const getRadarScore = () => {
-        if (marketStatus.volatility === 'HIGH') return '15%'; // Low confidence/safe mode
-        if (marketStatus.volatility === 'LOW') return '85%'; // High confidence
+        if (marketStatus.top_apy) return `${marketStatus.top_apy.toFixed(1)}%`;
+        if (marketStatus.volatility === 'HIGH') return '15%'; // Fallback
         return '45%';
     };
 
     const [signingIds, setSigningIds] = useState<Set<string | number>>(new Set());
+    const { signMessageAsync } = useSignMessage();
 
     const handleApprove = async (id: string | number) => {
         setSigningIds(prev => new Set(prev).add(id));
-        // Wait for animation
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        onApprove?.(id);
-        // Cleanup after a bit
-        setTimeout(() => {
+        try {
+            // 1. Sign off on the intent
+            // In a real app, we'd sign a typed data payload (EIP-712)
+            const signature = await signMessageAsync({
+                message: `Approve Request: ${id}`
+            });
+
+            // 2. Send signature to backend
+            await import('../services/api').then(m => m.api.approveRequest(String(id), signature));
+
+            // 3. Optimistic Update (Backend will log activity)
+            onApprove?.(id);
+        } catch (e) {
+            console.error("Signing failed or rejected", e);
+        } finally {
             setSigningIds(prev => {
                 const n = new Set(prev);
                 n.delete(id);
                 return n;
             });
-        }, 1000);
+        }
     };
 
     const handleYieldScan = async () => {
@@ -227,10 +241,10 @@ export default function AiPanel({ marketStatus, decisionFeed, onChat, onApprove,
                     <div>
                         <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-3 flex justify-between">
                             <span>Scanning Protocols</span>
-                            <span className="text-accent-primary animate-pulse">3 Active</span>
+                            <span className="text-accent-primary animate-pulse">{marketStatus.active_protocols?.length || 0} Active</span>
                         </div>
                         <div className="space-y-2">
-                            {['Aave V3 (Arbitrum)', 'Compound V3 (Mainnet)', 'Uniswap V3 (Polygon)'].map((p, i) => (
+                            {(marketStatus.active_protocols || ['Scanning...']).map((p, i) => (
                                 <div key={i} className="flex items-center justify-between p-2 rounded bg-bg-tertiary/50 border border-border-subtle">
                                     <span className="text-xs font-medium text-text-secondary">{p}</span>
                                     <Activity className="w-3 h-3 text-text-tertiary opacity-50" />

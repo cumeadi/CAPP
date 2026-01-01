@@ -117,3 +117,6 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     timestamp: datetime
+
+class SignedApprovalRequest(BaseModel):
+    signature: str
