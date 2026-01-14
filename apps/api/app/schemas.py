@@ -110,6 +110,13 @@ class AgentConfig(BaseModel):
     autonomy_level: str = "COPILOT" # COPILOT, GUARDED, SOVEREIGN
     hedge_threshold: int = 5
     network: str = "TESTNET"
+    
+    # New Fields
+    yield_preferences: List[str] = ["Aave", "Compound"] 
+    min_yield_apy: float = 3.0
+    compliance_strictness: str = "STANDARD" # STRICT, STANDARD, FLEXIBLE
+    sanctions_check_enabled: bool = True
+    notifications_enabled: bool = True
 
 class ChatRequest(BaseModel):
     query: str
