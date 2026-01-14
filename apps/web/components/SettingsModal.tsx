@@ -1,7 +1,7 @@
 'use client';
 
 
-import { X, Shield, Bot, Zap, Activity, Save, Loader2, Settings as SettingsIcon } from 'lucide-react';
+import { X, Shield, Bot, Zap, Activity, Save, Loader2, Settings as SettingsIcon, Bell, Wallet, FileText } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api, AgentConfig } from '@/services/api';
@@ -15,6 +15,7 @@ interface SettingsModalProps {
 type Tab = 'GENERAL' | 'AGENTS' | 'SECURITY';
 type RiskProfile = 'CONSERVATIVE' | 'BALANCED' | 'AGGRESSIVE';
 type AutonomyLevel = 'HUMAN_LOOP' | 'AUTONOMOUS';
+type ComplianceStrictness = 'STRICT' | 'STANDARD' | 'FLEXIBLE';
 
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const [activeTab, setActiveTab] = useState<Tab>('AGENTS');
@@ -24,6 +25,14 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const [autonomy, setAutonomy] = useState<AutonomyLevel>('HUMAN_LOOP');
     const [hedgeThreshold, setHedgeThreshold] = useState(5);
     const [network, setNetwork] = useState('TESTNET');
+
+    // New States
+    const [yieldPreferences, setYieldPreferences] = useState<string[]>(["Aave", "Compound"]);
+    const [minYieldApy, setMinYieldApy] = useState(3.0);
+    const [complianceStrictness, setComplianceStrictness] = useState<ComplianceStrictness>('STANDARD');
+    const [sanctionsCheck, setSanctionsCheck] = useState(true);
+    const [notifications, setNotifications] = useState(true);
+
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
 
@@ -37,6 +46,12 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     setAutonomy(config.autonomy_level as AutonomyLevel);
                     setHedgeThreshold(config.hedge_threshold);
                     setNetwork(config.network);
+                    // New fields
+                    if (config.yield_preferences) setYieldPreferences(config.yield_preferences);
+                    if (config.min_yield_apy) setMinYieldApy(config.min_yield_apy);
+                    if (config.compliance_strictness) setComplianceStrictness(config.compliance_strictness);
+                    if (config.sanctions_check_enabled !== undefined) setSanctionsCheck(config.sanctions_check_enabled);
+                    if (config.notifications_enabled !== undefined) setNotifications(config.notifications_enabled);
                 })
                 .catch(err => console.error("Failed to load settings:", err))
                 .finally(() => setLoading(false));
@@ -50,8 +65,13 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 risk_profile: riskProfile,
                 autonomy_level: autonomy,
                 hedge_threshold: hedgeThreshold,
-                network: network
-            });
+                network: network,
+                yield_preferences: yieldPreferences,
+                min_yield_apy: minYieldApy,
+                compliance_strictness: complianceStrictness,
+                sanctions_check_enabled: sanctionsCheck,
+                notifications_enabled: notifications
+            } as AgentConfig);
             onClose();
         } catch (e) {
             console.error("Failed to save:", e);
@@ -59,6 +79,14 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         } finally {
             setSaving(false);
         }
+    };
+
+    const toggleYieldProtocol = (protocol: string) => {
+        setYieldPreferences(prev =>
+            prev.includes(protocol)
+                ? prev.filter(p => p !== protocol)
+                : [...prev, protocol]
+        );
     };
 
     return (
@@ -97,12 +125,6 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                     {/* Sidebar Tabs */}
                                     <div className="w-48 bg-bg-tertiary/30 border-r border-border-medium p-4 space-y-2">
                                         <TabButton
-                                            active={activeTab === 'GENERAL'}
-                                            onClick={() => setActiveTab('GENERAL')}
-                                            icon={<Zap className="w-4 h-4" />}
-                                            label="General"
-                                        />
-                                        <TabButton
                                             active={activeTab === 'AGENTS'}
                                             onClick={() => setActiveTab('AGENTS')}
                                             icon={<Bot className="w-4 h-4" />}
@@ -113,6 +135,12 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                             onClick={() => setActiveTab('SECURITY')}
                                             icon={<Shield className="w-4 h-4" />}
                                             label="Security"
+                                        />
+                                        <TabButton
+                                            active={activeTab === 'GENERAL'}
+                                            onClick={() => setActiveTab('GENERAL')}
+                                            icon={<Zap className="w-4 h-4" />}
+                                            label="General"
                                         />
                                     </div>
 
@@ -136,7 +164,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                                         <div className="grid grid-cols-3 gap-3">
                                                             <RiskOption
                                                                 label="Conservative"
-                                                                desc="Capital Preservation"
+                                                                desc="Preserve Capital"
                                                                 selected={riskProfile === 'CONSERVATIVE'}
                                                                 onClick={() => setRiskProfile('CONSERVATIVE')}
                                                                 color="text-color-success"
@@ -158,15 +186,52 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                                         </div>
                                                     </section>
 
+                                                    {/* Yield Strategy */}
+                                                    <section>
+                                                        <h4 className="flex items-center gap-2 text-sm font-bold text-text-secondary uppercase tracking-widest mb-4">
+                                                            <Wallet className="w-4 h-4 text-accent-primary" />
+                                                            Yield Strategy
+                                                        </h4>
+                                                        <div className="space-y-4">
+                                                            <div>
+                                                                <div className="flex justify-between text-xs text-text-secondary mb-2">
+                                                                    <span>Minimum APY Threshold</span>
+                                                                    <span className="font-mono text-accent-primary">{minYieldApy.toFixed(1)}%</span>
+                                                                </div>
+                                                                <input
+                                                                    type="range"
+                                                                    min="0.5"
+                                                                    max="15"
+                                                                    step="0.5"
+                                                                    value={minYieldApy}
+                                                                    onChange={(e) => setMinYieldApy(parseFloat(e.target.value))}
+                                                                    className="w-full h-2 bg-bg-tertiary rounded-lg appearance-none cursor-pointer accent-accent-primary"
+                                                                />
+                                                            </div>
+
+                                                            <div className="grid grid-cols-2 gap-2">
+                                                                {['Aave', 'Compound', 'Uniswap', 'Yearn'].map(proto => (
+                                                                    <button
+                                                                        key={proto}
+                                                                        onClick={() => toggleYieldProtocol(proto)}
+                                                                        className={`px-3 py-2 rounded-lg text-sm border transition-all ${yieldPreferences.includes(proto)
+                                                                                ? 'bg-accent-primary/10 border-accent-primary text-text-primary'
+                                                                                : 'bg-bg-tertiary border-transparent text-text-tertiary hover:border-border-medium'
+                                                                            }`}
+                                                                    >
+                                                                        {proto}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </section>
+
                                                     {/* Operational Limits */}
                                                     <section>
                                                         <h4 className="flex items-center gap-2 text-sm font-bold text-text-secondary uppercase tracking-widest mb-4">
                                                             <Bot className="w-4 h-4 text-accent-primary" />
                                                             Operational Limits
                                                         </h4>
-
-                                                        {/* Legacy Autonomy Toggle Removed - Now controlled via Main Dashboard Dial */}
-
                                                         <div className="space-y-4">
                                                             <div>
                                                                 <div className="flex justify-between text-xs text-text-secondary mb-2">
@@ -206,6 +271,23 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                                             </label>
                                                         </div>
                                                     </section>
+
+                                                    <section>
+                                                        <h4 className="text-sm font-bold text-text-secondary uppercase tracking-widest mb-4">Notifications</h4>
+                                                        <label className="flex items-center justify-between p-4 bg-bg-tertiary/30 rounded-xl cursor-pointer hover:bg-bg-tertiary/50 transition-colors">
+                                                            <div className="flex items-center gap-3">
+                                                                <Bell className={`w-5 h-5 ${notifications ? 'text-accent-primary' : 'text-text-tertiary'}`} />
+                                                                <div>
+                                                                    <div className="text-sm font-bold text-text-primary">System Alerts</div>
+                                                                    <div className="text-xs text-text-tertiary">Receive updates on agent actions</div>
+                                                                </div>
+                                                            </div>
+                                                            <div className={`w-10 h-5 rounded-full transition-colors relative ${notifications ? 'bg-accent-primary' : 'bg-bg-tertiary border border-border-medium'}`}>
+                                                                <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${notifications ? 'translate-x-5' : 'translate-x-0'}`} />
+                                                            </div>
+                                                            <input type="checkbox" className="hidden" checked={notifications} onChange={(e) => setNotifications(e.target.checked)} />
+                                                        </label>
+                                                    </section>
                                                 </motion.div>
                                             )}
                                             {activeTab === 'SECURITY' && (
@@ -213,10 +295,57 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                                     key="security"
                                                     initial={{ opacity: 0, x: 20 }}
                                                     animate={{ opacity: 1, x: 0 }}
-                                                    className="text-center text-text-tertiary py-12"
+                                                    className="space-y-8"
                                                 >
-                                                    <Shield className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                                                    <p>Security configurations are managed by the admin policy.</p>
+                                                    <section>
+                                                        <h4 className="flex items-center gap-2 text-sm font-bold text-text-secondary uppercase tracking-widest mb-4">
+                                                            <Shield className="w-4 h-4 text-accent-primary" />
+                                                            Compliance Shield
+                                                        </h4>
+
+                                                        <div className="bg-bg-tertiary/20 rounded-xl p-4 border border-border-medium mb-6">
+                                                            <div className="flex items-center justify-between mb-4">
+                                                                <div className="flex items-center gap-3">
+                                                                    <FileText className="w-5 h-5 text-accent-warning" />
+                                                                    <div>
+                                                                        <div className="text-sm font-bold text-text-primary">Sanctions Screening</div>
+                                                                        <div className="text-xs text-text-tertiary">Check OFAC/UN lists before transfer</div>
+                                                                    </div>
+                                                                </div>
+                                                                <label className={`w-10 h-5 rounded-full transition-colors relative cursor-pointer ${sanctionsCheck ? 'bg-accent-primary' : 'bg-bg-tertiary border border-border-medium'}`}>
+                                                                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${sanctionsCheck ? 'translate-x-5' : 'translate-x-0'}`} />
+                                                                    <input type="checkbox" className="hidden" checked={sanctionsCheck} onChange={(e) => setSanctionsCheck(e.target.checked)} />
+                                                                </label>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="space-y-3">
+                                                            <h5 className="text-xs font-bold text-text-secondary uppercase">Strictness Level</h5>
+                                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                                <button
+                                                                    onClick={() => setComplianceStrictness('FLEXIBLE')}
+                                                                    className={`p-3 rounded-xl border text-left transition-all ${complianceStrictness === 'FLEXIBLE' ? 'bg-bg-secondary border-accent-secondary ring-1 ring-accent-secondary' : 'bg-bg-tertiary border-transparent opacity-60'}`}
+                                                                >
+                                                                    <div className="text-sm font-bold">Flexible</div>
+                                                                    <div className="text-[10px] text-text-tertiary">Alert only</div>
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setComplianceStrictness('STANDARD')}
+                                                                    className={`p-3 rounded-xl border text-left transition-all ${complianceStrictness === 'STANDARD' ? 'bg-bg-secondary border-accent-primary ring-1 ring-accent-primary' : 'bg-bg-tertiary border-transparent opacity-60'}`}
+                                                                >
+                                                                    <div className="text-sm font-bold">Standard</div>
+                                                                    <div className="text-[10px] text-text-tertiary">Block High Risk</div>
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setComplianceStrictness('STRICT')}
+                                                                    className={`p-3 rounded-xl border text-left transition-all ${complianceStrictness === 'STRICT' ? 'bg-bg-secondary border-accent-warning ring-1 ring-accent-warning' : 'bg-bg-tertiary border-transparent opacity-60'}`}
+                                                                >
+                                                                    <div className="text-sm font-bold">Strict</div>
+                                                                    <div className="text-[10px] text-text-tertiary">Block All Flagged</div>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </section>
                                                 </motion.div>
                                             )}
                                         </AnimatePresence>

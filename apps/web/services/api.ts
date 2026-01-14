@@ -46,6 +46,11 @@ export interface AgentConfig {
     autonomy_level: 'HUMAN_LOOP' | 'AUTONOMOUS' | 'COPILOT' | 'GUARDED' | 'SOVEREIGN';
     hedge_threshold: number;
     network: string;
+    yield_preferences: string[];
+    min_yield_apy: number;
+    compliance_strictness: 'STRICT' | 'STANDARD' | 'FLEXIBLE';
+    sanctions_check_enabled: boolean;
+    notifications_enabled: boolean;
 }
 
 export interface BridgeResponse {
