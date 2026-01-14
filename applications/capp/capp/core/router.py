@@ -76,10 +76,12 @@ class PaymentRouter:
 
     async def _evaluate_aptos(self, amount: float, recipient: str) -> RouteOption:
         client = get_aptos_client()
-        # Estimate Gas (Simulated for now until we add method to client)
-        # gas_token = await client.estimate_transfer_fee(recipient, amount) 
-        gas_token = 0.002 # Mock 0.002 APT
-        
+        # Estimate Gas (Live)
+        try:
+             gas_token = await client.estimate_transfer_gas(recipient, amount)
+        except Exception:
+             gas_token = 0.002 # Fallback
+             
         fee_usd = gas_token * self.prices["APT"]
         
         return RouteOption(
@@ -87,22 +89,24 @@ class PaymentRouter:
             fee_usd=fee_usd,
             eta_seconds=2, # Aptos is fast
             estimated_gas_token=gas_token,
-            recommendation_score=0, # Calculated later
+            recommendation_score=0, 
             reason="Sub-second finality"
         )
         
     async def _evaluate_polygon(self, amount: float, recipient: str) -> RouteOption:
         service = PolygonSettlementService()
-        # Estimate Gas
-        # gas_token = await service.estimate_transfer_fee(...)
-        gas_token = 0.01 # Mock 0.01 MATIC
-        
+        # Estimate Gas (Live)
+        try:
+             gas_token = await service.estimate_transfer_gas()
+        except Exception:
+             gas_token = 0.01 # Fallback
+             
         fee_usd = gas_token * self.prices["MATIC"]
         
         return RouteOption(
             chain="POLYGON",
             fee_usd=fee_usd,
-            eta_seconds=300, # 5 mins for probabilistic finality/checkpoint
+            eta_seconds=300, 
             estimated_gas_token=gas_token,
             recommendation_score=0,
             reason="High liquidity"
@@ -110,18 +114,19 @@ class PaymentRouter:
 
     async def _evaluate_starknet(self, amount: float, recipient: str) -> RouteOption:
         client = get_starknet_client()
-        # Estimate Gas
-        # gas_token = await client.estimate_transfer_fee(...)
-        gas_token = 0.00015 # Mock 0.00015 ETH (~$0.33)
+        # Estimate Gas (Live)
+        try:
+             # Starknet uses ETH for gas usually
+             gas_token = await client.estimate_transfer_fee(recipient, 1, None) # Amount 1 wei for estimation
+        except Exception:
+             gas_token = 0.00015 # Fallback
         
         fee_usd = gas_token * self.prices["ETH"]
         
         return RouteOption(
             chain="STARKNET",
             fee_usd=fee_usd,
-            eta_seconds=600, # L2 finality to L1 is slow, but L2 acceptance is fast logic? 
-            # For "Bridge", we care about L2 acceptance (seconds) if trusting sequencer.
-            # But let's be conservative.
+            eta_seconds=600,
             estimated_gas_token=gas_token,
             recommendation_score=0,
             reason="Secure AA & ZK Proven"

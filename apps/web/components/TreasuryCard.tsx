@@ -1,16 +1,20 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ArrowRightLeft, ArrowDown, ArrowUp, Settings, Send, TrendingUp } from 'lucide-react';
+import { ArrowRightLeft, ArrowDown, ArrowUp, Settings, Send, TrendingUp, CreditCard } from 'lucide-react';
 import Link from 'next/link';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import DepositModal from './DepositModal';
 import WithdrawModal from './WithdrawModal';
 import SettingsModal from './SettingsModal';
 import BridgeModal from './BridgeModal';
 import TransferModal from './TransferModal';
+
+import { FiatModal } from './FiatModal';
+import { api } from '@/services/api';
+import { useTreasury } from '@/hooks/useTreasury';
 
 interface TreasuryCardProps {
     balance: {
@@ -31,6 +35,14 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isBridgeOpen, setIsBridgeOpen] = useState(false);
     const [isTransferOpen, setIsTransferOpen] = useState(false);
+    const [isFiatOpen, setIsFiatOpen] = useState(false);
+
+    const { data: yieldStats, loading } = useTreasury();
+
+    // Fallback to prop balance if yield stats not ready or if specific value missing
+    const totalValue = yieldStats?.total_value_usd ?? balance.totalUsd;
+    const hotBalance = yieldStats?.hot_wallet_balance ?? balance.totalUsd;
+    const yieldBalance = yieldStats?.yield_balance ?? 0;
 
     return (
         <div className="treasury-card p-8 rounded-2xl relative overflow-hidden">
@@ -58,20 +70,28 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
                     Total Value (USD)
                 </div>
                 <div className="font-display text-6xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white to-text-secondary mb-2">
-                    ${balance.totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    ${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </div>
-                <div className="flex items-center gap-1 text-sm font-medium text-color-success">
-                    <TrendingUp className="w-4 h-4" />
-                    +$12,450 (24h)
+                <div className="flex items-center gap-4 text-sm font-medium">
+                    <div className="text-color-success flex items-center gap-1">
+                        <TrendingUp className="w-4 h-4" />
+                        +$12,450 (24h)
+                    </div>
+                    {yieldStats && (
+                        <div className="flex items-center gap-2 text-text-secondary border-l border-border-medium pl-4">
+                            <span className="text-xs uppercase tracking-widest">Smart Sweep:</span>
+                            <span className="text-accent-primary font-bold">Everything &gt; $15k Auto-Yielding</span>
+                        </div>
+                    )}
                 </div>
             </div>
 
             {/* Asset Allocation Grid */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
                 <div className="p-4 bg-bg-tertiary border border-border-subtle rounded-xl hover:border-accent-primary transition-colors group">
-                    <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">Aptos USDC</div>
-                    <div className="font-display text-xl font-semibold mb-1">${(balance.usdc).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
-                    <div className="text-xs text-text-secondary">Hub • Liquid</div>
+                    <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">Hot Wallet (Liquid)</div>
+                    <div className="font-display text-xl font-semibold mb-1">${hotBalance.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+                    <div className="text-xs text-text-secondary">Instant Settlement</div>
                 </div>
                 <div className="p-4 bg-bg-tertiary border border-border-subtle rounded-xl hover:border-accent-primary transition-colors group">
                     <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">Base USDC</div>
@@ -90,11 +110,11 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
                     <div className="absolute top-0 right-0 p-1">
                         <div className="flex items-center gap-1 bg-color-success/10 text-color-success px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide">
                             <TrendingUp className="w-3 h-3" />
-                            5.2% APY
+                            {yieldStats ? yieldStats.apy : 5.2}% APY
                         </div>
                     </div>
-                    <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">Arbitrum</div>
-                    <div className="font-display text-xl font-semibold mb-1">${(balance.arbitrumUsdc || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+                    <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">Yield Protocol</div>
+                    <div className="font-display text-xl font-semibold mb-1">${yieldBalance.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
                     <div className="text-xs text-text-secondary flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-color-success animate-pulse"></span>
                         Aave V3 Strategy
@@ -103,13 +123,20 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
             </div>
 
             {/* Quick Actions */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <button
                     onClick={() => setIsTransferOpen(true)}
-                    className="flex items-center justify-center gap-2 px-6 py-4 bg-accent-primary text-bg-primary rounded-xl text-sm font-bold uppercase tracking-wide hover:bg-white transition-all shadow-lg shadow-accent-primary/20"
+                    className="flex items-center justify-center gap-2 px-6 py-4 bg-bg-secondary border border-border-medium rounded-xl text-sm font-medium uppercase tracking-wide hover:border-accent-primary hover:text-accent-primary transition-all text-text-secondary"
                 >
                     <Send className="w-4 h-4" />
                     Send
+                </button>
+                <button
+                    onClick={() => setIsFiatOpen(true)}
+                    className="flex items-center justify-center gap-2 px-6 py-4 bg-bg-secondary border border-border-medium rounded-xl text-sm font-medium uppercase tracking-wide hover:border-color-success hover:text-color-success transition-all text-text-secondary"
+                >
+                    <CreditCard className="w-4 h-4" />
+                    Buy
                 </button>
                 <button
                     onClick={() => setIsDepositOpen(true)}
@@ -146,6 +173,7 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
             <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
             <BridgeModal isOpen={isBridgeOpen} onClose={() => setIsBridgeOpen(false)} address={address} />
             <TransferModal isOpen={isTransferOpen} onClose={() => setIsTransferOpen(false)} />
+            <FiatModal isOpen={isFiatOpen} onClose={() => setIsFiatOpen(false)} />
         </div>
     );
 }

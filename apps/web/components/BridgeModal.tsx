@@ -1,9 +1,8 @@
 
-import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ArrowRightLeft, CheckCircle, Clock } from 'lucide-react';
-import { api } from '@/services/api';
+import { X } from 'lucide-react';
 import Portal from './Portal';
+import BridgeWidget from './BridgeWidget';
 
 interface BridgeModalProps {
     isOpen: boolean;
@@ -11,46 +10,7 @@ interface BridgeModalProps {
     address: string;
 }
 
-export default function BridgeModal({ isOpen, onClose, address }: BridgeModalProps) {
-    const [mode, setMode] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
-    const [amount, setAmount] = useState('');
-    const [status, setStatus] = useState<string | null>(null);
-    const [exitId, setExitId] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
-
-    const handleSubmit = async () => {
-        try {
-            setError(null);
-            setStatus('PROCESSING');
-
-            if (mode === 'DEPOSIT') {
-                const res = await api.bridgeDeposit(Number(amount), address);
-                setStatus(`Deposited! L2 Mint: ${res.child_tx.slice(0, 10)}...`);
-            } else {
-                const res = await api.bridgeWithdraw(Number(amount), address);
-                setStatus(`Exit Started! ETA: ${new Date(res.estimated_completion).toLocaleTimeString()}`);
-                setExitId(res.exit_id);
-            }
-        } catch (e: any) {
-            setError(e.message);
-            setStatus(null);
-        }
-    };
-
-    const handleFinalize = async () => {
-        if (!exitId) return;
-        try {
-            setError(null);
-            setStatus('FINALIZING...');
-            const res = await api.finalizeExit(exitId);
-            setStatus(`Finalized! Funds Released on L1.`);
-            setExitId(null);
-        } catch (e: any) {
-            setError(e.message);
-            setStatus('WAITING_CHALLENGE_PERIOD');
-        }
-    };
-
+export default function BridgeModal({ isOpen, onClose }: BridgeModalProps) {
     return (
         <Portal>
             <AnimatePresence>
@@ -69,113 +29,14 @@ export default function BridgeModal({ isOpen, onClose, address }: BridgeModalPro
                             exit={{ opacity: 0, scale: 0.95 }}
                             className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none p-4"
                         >
-                            <div className="bg-bg-secondary w-full max-w-md rounded-2xl border border-border-subtle shadow-2xl overflow-hidden pointer-events-auto">
-                                {/* Header */}
-                                <div className="p-6 border-b border-border-subtle flex justify-between items-center bg-bg-tertiary/50">
-                                    <div>
-                                        <h2 className="text-xl font-display font-bold">Plasma Bridge</h2>
-                                        <p className="text-xs text-text-tertiary mt-1 uppercase tracking-widest">L1 (Aptos) ↔ L2 (Polygon)</p>
-                                    </div>
-                                    <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
-                                        <X className="w-5 h-5 text-text-tertiary" />
-                                    </button>
-                                </div>
-
-                                {/* Tabs */}
-                                <div className="flex border-b border-border-subtle">
-                                    <button
-                                        onClick={() => setMode('DEPOSIT')}
-                                        className={`flex-1 py-4 text-sm font-medium uppercase tracking-wider transition-colors border-b-2 ${mode === 'DEPOSIT'
-                                            ? 'border-accent-primary text-text-primary bg-accent-primary/5'
-                                            : 'border-transparent text-text-tertiary hover:text-text-secondary'
-                                            }`}
-                                    >
-                                        Deposit (L1 → L2)
-                                    </button>
-                                    <button
-                                        onClick={() => setMode('WITHDRAW')}
-                                        className={`flex-1 py-4 text-sm font-medium uppercase tracking-wider transition-colors border-b-2 ${mode === 'WITHDRAW'
-                                            ? 'border-accent-primary text-text-primary bg-accent-primary/5'
-                                            : 'border-transparent text-text-tertiary hover:text-text-secondary'
-                                            }`}
-                                    >
-                                        Withdraw (L2 → L1)
-                                    </button>
-                                </div>
-
-                                {/* Content */}
-                                <div className="p-6 space-y-6">
-
-                                    {status ? (
-                                        <div className="text-center py-8">
-                                            <div className="w-16 h-16 bg-accent-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                                                {status.includes('Finaliz') || status.includes('Deposited') ? <CheckCircle className="w-8 h-8 text-accent-primary" /> : <Clock className="w-8 h-8 text-accent-primary" />}
-                                            </div>
-                                            <h3 className="text-lg font-bold mb-2">{status.split('!')[0]}!</h3>
-
-                                            {/* Countdown Logic */}
-                                            {exitId && status.includes('Exit Started') && (
-                                                <div className="my-6 p-4 bg-bg-primary rounded-xl border border-border-medium">
-                                                    <div className="text-xs text-text-tertiary uppercase tracking-widest mb-2">Challenge Period Remaining</div>
-                                                    <div className="font-mono text-2xl font-bold text-accent-primary">
-                                                        <Countdown targetDate={new Date(status.split('ETA: ')[1])} onComplete={() => setStatus('READY_TO_FINALIZE')} />
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {(exitId || status === ('READY_TO_FINALIZE')) && (
-                                                <div className="mt-6">
-                                                    {(status === 'READY_TO_FINALIZE' || status.includes('Finalized')) ? (
-                                                        status.includes('Finalized') ? (
-                                                            <div className="text-sm text-color-success font-bold">Funds Released to L1 Wallet</div>
-                                                        ) : (
-                                                            <button
-                                                                onClick={handleFinalize}
-                                                                className="px-6 py-2 bg-accent-primary text-bg-primary rounded-lg text-sm font-bold uppercase hover:bg-white transition-all shadow-lg shadow-accent-primary/20"
-                                                            >
-                                                                Finalize Exit Now
-                                                            </button>
-                                                        )
-                                                    ) : (
-                                                        <div className="text-xs text-text-tertiary">
-                                                            Funds are locked until challenge period ends.
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-
-                                            {error && (
-                                                <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-                                                    {error}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <div>
-                                                <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">Amount (USDC)</label>
-                                                <div className="relative">
-                                                    <input
-                                                        type="number"
-                                                        value={amount}
-                                                        onChange={(e) => setAmount(e.target.value)}
-                                                        placeholder="0.00"
-                                                        className="w-full bg-bg-tertiary border border-border-medium rounded-xl px-4 py-3 text-lg font-mono focus:outline-none focus:border-accent-primary transition-colors"
-                                                    />
-                                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-text-tertiary">USDC</span>
-                                                </div>
-                                            </div>
-
-                                            <button
-                                                onClick={handleSubmit}
-                                                disabled={!amount}
-                                                className="w-full py-4 bg-gradient-to-r from-accent-primary to-accent-secondary rounded-xl text-bg-primary font-bold uppercase tracking-wider shadow-lg hover:shadow-accent-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                {mode === 'DEPOSIT' ? 'Deposit to Polygon' : 'Start Plasma Exit'}
-                                            </button>
-                                        </>
-                                    )}
-                                </div>
+                            <div className="relative pointer-events-auto">
+                                <button
+                                    onClick={onClose}
+                                    className="absolute -top-12 right-0 p-2 text-text-tertiary hover:text-white transition-colors"
+                                >
+                                    <X className="w-6 h-6" />
+                                </button>
+                                <BridgeWidget />
                             </div>
                         </motion.div>
                     </>
@@ -185,32 +46,4 @@ export default function BridgeModal({ isOpen, onClose, address }: BridgeModalPro
     );
 }
 
-function Countdown({ targetDate, onComplete }: { targetDate: Date; onComplete: () => void }) {
-    const [timeLeft, setTimeLeft] = useState('');
-
-    useEffect(() => {
-        const timer = setInterval(() => {
-            const now = new Date().getTime();
-            const distance = targetDate.getTime() - now;
-
-            if (distance < 0) {
-                clearInterval(timer);
-                setTimeLeft("00:00:00");
-                onComplete();
-                return;
-            }
-
-            const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-
-            setTimeLeft(`${days > 0 ? days + 'd ' : ''}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
-        }, 1000);
-
-        return () => clearInterval(timer);
-    }, [targetDate]);
-
-    return <span>{timeLeft || "Calculating..."}</span>;
-}
 

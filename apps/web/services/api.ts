@@ -21,6 +21,26 @@ export interface ComplianceCheckResponse {
     reasoning: string;
 }
 
+export interface YieldStatsResponse {
+    total_value_usd: number;
+    hot_wallet_balance: number;
+    yield_balance: number;
+    apy: number;
+    is_sweeping: boolean;
+}
+
+export interface ComplianceCase {
+    case_id: string;
+    payment_id: string;
+    amount: number;
+    currency: string;
+    sender: string;
+    recipient: string;
+    risk_level: string;
+    flags: string[];
+    timestamp: string;
+}
+
 export interface AgentConfig {
     risk_profile: 'CONSERVATIVE' | 'BALANCED' | 'AGGRESSIVE';
     autonomy_level: 'HUMAN_LOOP' | 'AUTONOMOUS' | 'COPILOT' | 'GUARDED' | 'SOVEREIGN';
@@ -212,6 +232,40 @@ export const api = {
         const res = await fetch(`${API_BASE}/system/health`);
         if (!res.ok) throw new Error('Failed to fetch system status');
         return res.json();
+    },
+    // Smart Sweep & Compliance
+    getYieldStats: async (): Promise<YieldStatsResponse> => {
+        // Mock for now, would call /finance/yield/stats
+        return {
+            total_value_usd: 65420.50,
+            hot_wallet_balance: 15420.50,
+            yield_balance: 50000.00,
+            apy: 6.8, // Updated for "Smart Sweep" demo
+            is_sweeping: true
+        };
+    },
+
+    getComplianceQueue: async (): Promise<ComplianceCase[]> => {
+        // Mock for now, would call /compliance/queue
+        return [
+            {
+                case_id: "CASE-101",
+                payment_id: "pay_12345",
+                amount: 5000,
+                currency: "USDC",
+                sender: "Alice Doe",
+                recipient: "Bob Smith (High Risk)",
+                risk_level: "HIGH",
+                flags: ["Sanctions Potential", "Large Amount"],
+                timestamp: new Date().toISOString()
+            }
+        ];
+    },
+
+    reviewComplianceCase: async (caseId: string, decision: 'APPROVE' | 'REJECT'): Promise<void> => {
+        // Mock call
+        console.log(`Compliance Decision: ${decision} for ${caseId}`);
+        await new Promise(r => setTimeout(r, 1000));
     }
 };
 

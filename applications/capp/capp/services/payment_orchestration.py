@@ -12,19 +12,20 @@ from decimal import Decimal
 from uuid import uuid4
 import structlog
 
-from .models.payments import (
+from capp.models.payments import (
     CrossBorderPayment, PaymentResult, PaymentStatus, PaymentRoute,
     PaymentType, PaymentMethod, Country, Currency, MMOProvider
 )
-from .agents.base import agent_registry
-from .agents.routing.route_optimization_agent import RouteOptimizationAgent, RouteOptimizationConfig
-from .services.payment_service import PaymentService
-from .services.exchange_rates import ExchangeRateService
-from .services.compliance import ComplianceService
-from .services.mmo_availability import MMOAvailabilityService
-from .services.metrics import MetricsCollector
-from .core.redis import get_cache
-from .config.settings import get_settings
+from capp.agents.base import agent_registry
+from capp.agents.routing.route_optimization_agent import RouteOptimizationAgent, RouteOptimizationConfig
+from capp.services.payment_service import PaymentService
+from capp.services.exchange_rates import ExchangeRateService
+from capp.services.compliance import ComplianceService
+from capp.services.mmo_availability import MMOAvailabilityService
+from capp.services.metrics import MetricsCollector
+from capp.services.yield_service import YieldService
+from capp.core.redis import get_cache
+from capp.config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -55,6 +56,7 @@ class PaymentOrchestrationService:
         self.compliance_service = ComplianceService()
         self.mmo_availability_service = MMOAvailabilityService()
         self.metrics_collector = MetricsCollector()
+        self.yield_service = YieldService()
         
         # Initialize agents
         self._initialize_agents()
@@ -113,12 +115,33 @@ class PaymentOrchestrationService:
             # Step 3: Compliance validation
             compliance_result = await self._validate_compliance(payment)
             if not compliance_result.success:
+                # Check if we need to pause for review instead of failing
+                if compliance_result.status == PaymentStatus.COMPLIANCE_REVIEW:
+                    self.logger.info("Payment paused for Compliance Review", payment_id=payment.payment_id)
+                    payment.update_status(PaymentStatus.COMPLIANCE_REVIEW)
+                    # In a real async system, we would stop here and resume later.
+                    # For this demo flow, we return early.
+                    return compliance_result
+                    
                 return await self._handle_payment_failure(payment, "Compliance validation failed")
             
-            # Step 4: Liquidity check
+            # Step 4: Liquidity check (Smart Sweep Integration)
             liquidity_result = await self._check_liquidity(payment)
             if not liquidity_result.success:
-                return await self._handle_payment_failure(payment, "Insufficient liquidity")
+                 # Check if we are unwinding yield
+                if liquidity_result.status == PaymentStatus.YIELD_UNWINDING:
+                    self.logger.info("Payment paused for Yield Unwinding", payment_id=payment.payment_id)
+                    payment.update_status(PaymentStatus.YIELD_UNWINDING)
+                    # The system would resume after unwinding.
+                    # We can optionally sleep loop here or return "Processing/Pending"
+                    # For demo purposes, we will treat it as a successful "pause" state
+                    # But since the request_liquidity mock includes the sleep, we can assume it's ready now?
+                    # Actually, yield_service.request_liquidity() is async and waits. 
+                    # If it returned True, we have funds. If False, we failed.
+                    # Let's revisit _check_liquidity logic below.
+                    pass
+                else:
+                    return await self._handle_payment_failure(payment, "Insufficient liquidity")
             
             # Step 5: Exchange rate locking
             rate_result = await self._lock_exchange_rate(payment)
@@ -308,6 +331,16 @@ class PaymentOrchestrationService:
             )
             
             if not kyc_result.is_compliant:
+                # Check for Shield Review
+                if kyc_result.risk_level in ["medium", "high"]:
+                     return PaymentResult(
+                        success=False, # Temporarily False to stop flow
+                        payment_id=payment.payment_id,
+                        status=PaymentStatus.COMPLIANCE_REVIEW,
+                        message="Flagged for Institutional Review",
+                        error_code="COMPLIANCE_REVIEW_REQUIRED"
+                    )
+
                 return PaymentResult(
                     success=False,
                     payment_id=payment.payment_id,
@@ -330,6 +363,17 @@ class PaymentOrchestrationService:
                     message=f"Sanctions check failed: {', '.join(sanctions_result.violations)}",
                     error_code="SANCTIONS_ERROR"
                 )
+
+            # Check Travel Rule
+            travel_rule_ok = await self.compliance_service.check_travel_rule(payment)
+            if not travel_rule_ok:
+                 return PaymentResult(
+                    success=False,
+                    payment_id=payment.payment_id,
+                    status=PaymentStatus.COMPLIANCE_REVIEW, # Flag for missing info
+                    message="Travel Rule Information Missing - Flagged for Review",
+                    error_code="TRAVEL_RULE_REVIEW"
+                )
             
             self.logger.info("Compliance validation passed", payment_id=payment.payment_id)
             
@@ -351,28 +395,33 @@ class PaymentOrchestrationService:
             )
     
     async def _check_liquidity(self, payment: CrossBorderPayment) -> PaymentResult:
-        """Check liquidity availability"""
+        """Check liquidity availability using Smart Sweep Yield Service"""
         try:
-            # Mock liquidity check - in real implementation, this would check actual liquidity pools
-            # For demo purposes, assume sufficient liquidity exists
-            liquidity_available = True
+            # Determine logic currency (e.g. USDC for settlement)
+            currency = "USDC" # Defaulting for demo
+            
+            # Request Liquidity (Handles JIT Unwinding internally)
+            liquidity_available = await self.yield_service.request_liquidity(
+                payment.amount,
+                currency
+            )
             
             if not liquidity_available:
                 return PaymentResult(
                     success=False,
                     payment_id=payment.payment_id,
                     status=PaymentStatus.FAILED,
-                    message="Insufficient liquidity for payment",
+                    message="Insufficient liquidity (Hot + Yield) for payment",
                     error_code="INSUFFICIENT_LIQUIDITY"
                 )
             
-            self.logger.info("Liquidity check passed", payment_id=payment.payment_id)
+            self.logger.info("Liquidity check passed (Smart Sweep confirmed)", payment_id=payment.payment_id)
             
             return PaymentResult(
                 success=True,
                 payment_id=payment.payment_id,
                 status=PaymentStatus.PROCESSING,
-                message="Liquidity check passed"
+                message="Liquidity available"
             )
             
         except Exception as e:

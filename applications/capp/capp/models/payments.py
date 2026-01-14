@@ -43,6 +43,10 @@ class PaymentStatus(str, Enum):
     CANCELLED = "cancelled"
     EXPIRED = "expired"
     OFFLINE_QUEUED = "offline_queued"
+    
+    # New Async States
+    YIELD_UNWINDING = "yield_unwinding" # Paused while retrieving funds from Yield Protocol
+    COMPLIANCE_REVIEW = "compliance_review" # Paused for Manual/Institutional Review
 
 
 class PaymentType(str, Enum):

@@ -26,10 +26,11 @@ export const StarknetProvider = ({ children }: { children: ReactNode }) => {
         const init = async () => {
             const { wallet } = await connect({ modalMode: "neverAsk" });
 
-            if (wallet && wallet.isConnected) {
-                setAccount(wallet.account);
-                setAddress(wallet.selectedAddress);
-                setProvider(wallet.provider);
+            if (wallet) {
+                const w = wallet as any;
+                setAccount(w.account);
+                setAddress(w.selectedAddress);
+                setProvider(w.provider);
                 setIsConnected(true);
             }
         };
@@ -43,10 +44,11 @@ export const StarknetProvider = ({ children }: { children: ReactNode }) => {
                 modalTheme: "dark"
             });
 
-            if (wallet && wallet.isConnected) {
-                setAccount(wallet.account);
-                setAddress(wallet.selectedAddress);
-                setProvider(wallet.provider);
+            if (wallet && (wallet as any).isConnected) {
+                const w = wallet as any;
+                setAccount(w.account);
+                setAddress(w.selectedAddress);
+                setProvider(w.provider);
                 setIsConnected(true);
             }
         } catch (error) {

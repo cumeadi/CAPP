@@ -14,16 +14,16 @@ import structlog
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models.payments import (
+from capp.models.payments import (
     CrossBorderPayment, PaymentResult, PaymentStatus, PaymentBatch
 )
-from .agents.base import agent_registry
-from .agents.routing.route_optimization_agent import RouteOptimizationAgent, RouteOptimizationConfig
-from .core.database import get_database_session
-from .core.redis import get_cache
-from .config.settings import get_settings
-from .repositories.payment import PaymentRepository
-from .utils.payment_mapper import crossborder_payment_to_db, db_payment_to_crossborder
+from capp.agents.base import agent_registry
+from capp.agents.routing.route_optimization_agent import RouteOptimizationAgent, RouteOptimizationConfig
+from capp.core.database import AsyncSessionLocal
+from capp.core.redis import get_cache
+from capp.config.settings import get_settings
+from capp.repositories.payment import PaymentRepository
+from capp.utils.payment_mapper import crossborder_payment_to_db, db_payment_to_crossborder
 
 logger = structlog.get_logger(__name__)
 
@@ -254,7 +254,7 @@ class PaymentService:
     async def _store_payment(self, payment: CrossBorderPayment, user_id: Optional[UUID] = None) -> None:
         """Store payment in database"""
         try:
-            async with get_database_session() as session:
+            async with AsyncSessionLocal() as session:
                 repo = PaymentRepository(session)
 
                 # Convert Pydantic model to SQLAlchemy model
@@ -333,7 +333,7 @@ class PaymentService:
             CrossBorderPayment: The payment, or None if not found
         """
         try:
-            async with get_database_session() as session:
+            async with AsyncSessionLocal() as session:
                 repo = PaymentRepository(session)
 
                 # Get payment from database

@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from .config.settings import get_settings
 from .core.database import PaymentRepository, UserRepository
-from .models.payments import PaymentStatus
+from capp.models.payments import PaymentStatus
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
