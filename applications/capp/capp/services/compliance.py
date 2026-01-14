@@ -92,6 +92,37 @@ class ComplianceService:
                 "special_requirements": ["fica_compliance"]
             }
         }
+            
+    async def check_travel_rule(self, payment: CrossBorderPayment) -> bool:
+        """
+        Check Travel Rule Compliance (FATF Recommendation 16).
+        Ensures originator and beneficiary information is complete for transactions > threshold.
+        """
+        # Global Threshold ~ $1000 USD
+        TRAVEL_RULE_THRESHOLD_USD = 1000.00
+        
+        # Convert amount to USD (Mock conversion)
+        amount_usd = float(payment.amount) # Assuming base is USD-pegged for simplicity or already converted
+        
+        if amount_usd < TRAVEL_RULE_THRESHOLD_USD:
+            return True
+            
+        # Check Required Fields
+        sender_ok = all ([
+            payment.sender.name,
+            payment.sender.address or payment.sender.id_number or payment.sender.date_of_birth
+        ])
+        
+        recipient_ok = all([
+            payment.recipient.name,
+            payment.recipient.bank_account or payment.recipient.mmo_account
+        ])
+        
+        if not (sender_ok and recipient_ok):
+            self.logger.warning("Travel Rule Violation", payment_id=str(payment.payment_id))
+            return False
+            
+        return True
     
     async def check_route_compliance(self, route: PaymentRoute, from_country: Country, to_country: Country, payment: Optional[CrossBorderPayment] = None) -> ComplianceResult:
         """
@@ -150,6 +181,25 @@ class ComplianceService:
             # Check if compliant
             is_compliant = len(violations) == 0
             
+            # Compliance Shield Logic
+            # If Risk is Medium or High but not explicitly Rejected, flag for review
+            should_review = False
+            if risk_level in ["medium", "high"] and is_compliant: # Compliant but risky
+                should_review = True
+                
+            if should_review:
+                return ComplianceResult(
+                    is_compliant=False, # Pause for review
+                    risk_score=risk_score,
+                    risk_level=risk_level,
+                    violations=["Transaction flagged for institutional review"],
+                    required_actions=["Manual Approval Required"],
+                    country_specific_requirements={
+                        from_country: from_regulations.get("special_requirements", []),
+                        to_country: to_regulations.get("special_requirements", [])
+                    }
+                )
+
             return ComplianceResult(
                 is_compliant=is_compliant,
                 risk_score=risk_score,

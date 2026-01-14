@@ -9,10 +9,12 @@ interface TransferFormProps {
 }
 
 export default function TransferForm({ onCancel, onSuccess }: TransferFormProps) {
-    const [step, setStep] = useState<'DETAILS' | 'COMPLIANCE' | 'REVIEW' | 'PROCESSING'>('DETAILS');
+    const [step, setStep] = useState<'DETAILS' | 'COMPLIANCE' | 'ROUTING' | 'REVIEW' | 'PROCESSING'>('DETAILS');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [logs, setLogs] = useState<string[]>([]);
+    const [routes, setRoutes] = useState<any[]>([]);
+    const [selectedRoute, setSelectedRoute] = useState<any>(null);
 
     const [formData, setFormData] = useState({
         recipientName: "John Doe",
@@ -56,10 +58,31 @@ export default function TransferForm({ onCancel, onSuccess }: TransferFormProps)
             }
 
             addLog(`[PASSED] Risk Score: ${data.risk_score}`);
-            addLog("Compliance Approved. Proceeding to Routing...");
-            setStep('REVIEW');
+            addLog("Compliance Approved. Calculating Routes...");
+            handleRouting();
         } catch (e: any) {
             setError(e.message);
+            setLoading(false);
+        }
+    };
+
+    const handleRouting = async () => {
+        try {
+            const res = await fetch('http://localhost:8000/routing/calculate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    amount: parseFloat(formData.amount),
+                    recipient: "0xMock",
+                    preference: "CHEAPEST"
+                })
+            });
+            const data = await res.json();
+            setRoutes(data.routes);
+            setSelectedRoute(data.recommended_route);
+            setStep('ROUTING');
+        } catch (e: any) {
+            setError("Routing Failed: " + e.message);
         } finally {
             setLoading(false);
         }
@@ -166,6 +189,42 @@ export default function TransferForm({ onCancel, onSuccess }: TransferFormProps)
                                 {loading ? 'Checking Compliance...' : 'Review Transfer'}
                             </button>
                         </div>
+                    </motion.div>
+                )}
+
+                {(step === 'ROUTING') && (
+                    <motion.div key="routing" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+                        <h4 className="text-sm uppercase text-text-tertiary mb-3">Select Payment Route</h4>
+                        <div className="space-y-3 mb-6">
+                            {routes.map((route, idx) => (
+                                <div
+                                    key={idx}
+                                    onClick={() => setSelectedRoute(route)}
+                                    className={`p-3 rounded-lg border cursor-pointer transition-all ${selectedRoute?.chain === route.chain
+                                            ? 'bg-accent-primary/10 border-accent-primary'
+                                            : 'bg-bg-tertiary border-border-medium hover:border-text-secondary'
+                                        }`}
+                                >
+                                    <div className="flex justify-between items-center mb-1">
+                                        <div className="font-bold text-sm text-text-primary flex items-center gap-2">
+                                            {route.chain}
+                                            {idx === 0 && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 rounded uppercase">Best</span>}
+                                        </div>
+                                        <div className="text-sm font-mono">${route.fee_usd.toFixed(4)}</div>
+                                    </div>
+                                    <div className="flex justify-between text-xs text-text-tertiary">
+                                        <div>{route.reason}</div>
+                                        <div>~{route.eta_seconds}s</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <button
+                            onClick={() => setStep('REVIEW')}
+                            className="w-full bg-accent-primary hover:bg-accent-primary/90 text-bg-primary font-bold py-3 rounded"
+                        >
+                            Continue with {selectedRoute?.chain}
+                        </button>
                     </motion.div>
                 )}
 

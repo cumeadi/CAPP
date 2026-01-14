@@ -145,6 +145,38 @@ class StarknetClient:
             logger.error("Failed to execute transfer", error=str(e))
             raise
 
+    async def estimate_transfer_fee(self, recipient_address: str, amount: int, token_address: str = None) -> float:
+        """
+        Estimate fee for a transfer.
+        Returns estimated fee in ETH (float).
+        """
+        # If no account active, return Mock/Standard Estimate
+        if not self.account:
+             return 0.00015 # Standard Mock
+             
+        eth_address = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+        target_token = token_address or eth_address
+        
+        try:
+             from starknet_py.net.client_models import Call
+             
+             call = Call(
+                to_addr=int(target_token, 16),
+                selector=0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e,
+                calldata=[int(recipient_address, 16), amount, 0]
+             )
+             
+             # Estimate Fee using Account wrapper
+             estimated_fee = await self.account.estimate_fee(calls=call)
+             
+             # estimated_fee.overall_fee is in Wei/Fri
+             fee_wei = estimated_fee.overall_fee
+             return float(fee_wei) / 1e18
+             
+        except Exception as e:
+            logger.warning("Failed to estimate Starknet fee, using default", error=str(e))
+            return 0.0002 # Fallback conservative estimate
+
     def compute_address(self, public_key: int, salt: int = 20) -> str:
         """
         Compute the counterfactual address of an OpenZeppelin Account.

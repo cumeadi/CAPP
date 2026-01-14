@@ -133,13 +133,6 @@ async def analyze_market(symbol: str, db: Session = Depends(database.get_db)):
             reasoning=adjusted_reasoning,
             timestamp=datetime.utcnow()
         )
-        return schemas.MarketAnalysisResponse(
-            symbol=symbol,
-            risk_level=result.get("risk_level", "UNKNOWN"),
-            recommendation=result.get("recommendation", "UNKNOWN"),
-            reasoning=adjusted_reasoning,
-            timestamp=datetime.utcnow()
-        )
     except Exception as e:
         get_activity_log().log_activity(
             agent_id="market_analyst", 

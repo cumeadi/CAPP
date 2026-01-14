@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAccount } from 'wagmi';
 import TreasuryCard from '@/components/TreasuryCard';
+import ComplianceShield from '@/components/ComplianceShield';
 import AiPanel from '@/components/AiPanel';
 import AutonomyDial, { AutonomyLevel } from '@/components/AutonomyDial';
 import { api } from '@/services/api';
@@ -193,6 +194,7 @@ export default function Home() {
       <div className="min-h-screen relative font-mono text-text-primary">
          {/* Background Grid */}
          <div className="background-grid"></div>
+         <ComplianceShield />
 
          <div className="container mx-auto px-6 py-8 relative z-10 max-w-[1400px]">
 
@@ -206,11 +208,11 @@ export default function Home() {
                      <div className="font-display text-2xl font-bold tracking-tight flex items-center gap-3">
                         CAPP Treasury
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${systemHealth.status === 'healthy' ? 'bg-color-success/10 text-color-success border border-color-success/30' :
-                              systemHealth.status === 'degraded' ? 'bg-accent-warning/10 text-accent-warning border border-accent-warning/30' :
-                                 'bg-text-tertiary/10 text-text-tertiary border border-text-tertiary/30'
+                           systemHealth.status === 'degraded' ? 'bg-accent-warning/10 text-accent-warning border border-accent-warning/30' :
+                              'bg-text-tertiary/10 text-text-tertiary border border-text-tertiary/30'
                            }`}>
                            <span className={`w-1.5 h-1.5 rounded-full mr-1 ${systemHealth.status === 'healthy' ? 'bg-color-success animate-pulse' :
-                                 systemHealth.status === 'degraded' ? 'bg-accent-warning' : 'bg-text-tertiary'
+                              systemHealth.status === 'degraded' ? 'bg-accent-warning' : 'bg-text-tertiary'
                               }`} />
                            {systemHealth.status === 'healthy' ? 'System Online' : systemHealth.status}
                         </span>

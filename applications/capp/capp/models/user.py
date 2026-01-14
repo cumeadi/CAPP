@@ -10,7 +10,7 @@ from typing import Optional, List
 from enum import Enum
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, Field, validator
 
 
 class UserRole(str, Enum):
@@ -32,7 +32,7 @@ class UserStatus(str, Enum):
 
 class UserBase(BaseModel):
     """Base user model"""
-    email: EmailStr
+    email: str
     full_name: str = Field(..., min_length=1, max_length=200)
     phone_number: Optional[str] = Field(None, pattern=r'^\+?[1-9]\d{1,14}$')
     role: UserRole = UserRole.USER
@@ -109,7 +109,7 @@ class TokenData(BaseModel):
 
 class LoginRequest(BaseModel):
     """Login request model"""
-    email: EmailStr
+    email: str
     password: str
 
 
@@ -139,7 +139,7 @@ class PasswordChangeRequest(BaseModel):
 
 class PasswordResetRequest(BaseModel):
     """Password reset request model"""
-    email: EmailStr
+    email: str
 
 
 class PasswordResetConfirm(BaseModel):

@@ -164,6 +164,31 @@ class PolygonSettlementService:
             return "success" if receipt.status == 1 else "failed"
         except Exception:
             return "pending"
+
+    async def estimate_transfer_gas(self) -> float:
+        """
+        Estimate gas cost for a standard transfer in MATIC.
+        Returns estimated fee in MATIC.
+        """
+        if not self.w3 or not self.w3.is_connected():
+            return 0.01
+            
+        try:
+             loop = asyncio.get_event_loop()
+             gas_price = await loop.run_in_executor(
+                 None, 
+                 lambda: self.w3.eth.gas_price
+             )
+             
+             # Standard transfer gas limit
+             gas_limit = 21000
+             
+             cost_wei = gas_price * gas_limit
+             return float(self.w3.from_wei(cost_wei, 'ether'))
+             
+        except Exception as e:
+            self.logger.error("Failed to estimate Polygon gas", error=str(e))
+            return 0.01 # Fallback
     async def get_account_balance(self, address: str) -> float:
         """Get MATIC balance for an address"""
         if not self.w3 or not self.w3.is_connected():

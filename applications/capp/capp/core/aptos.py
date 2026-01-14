@@ -155,6 +155,34 @@ class AptosClient:
         except Exception as e:
             self.logger.error("Failed to submit transaction", error=str(e))
             raise
+
+    async def estimate_transfer_gas(self, recipient_address: str, amount: float) -> float:
+        """
+        Estimate gas cost for a transfer in APT.
+        Returns estimated fee in APT (float).
+        """
+        try:
+             # 1. Get Gas Price (in octas)
+             if not self.rest_client:
+                 return 0.002 # Mock if offline
+             
+             loop = asyncio.get_event_loop()
+             gas_price = await loop.run_in_executor(
+                 None, 
+                 lambda: self.rest_client.estimate_gas_price()
+             )
+             
+             # 2. Estimate Gas Units
+             # Standard transfer is ~1000-2000 units. Let's use 2000 to be safe.
+             # Ideally we simulate, but client.simulate_transaction requires building signed txn.
+             gas_units = 2000 
+             
+             total_octas = gas_price * gas_units
+             return float(total_octas) / 100_000_000
+             
+        except Exception as e:
+            self.logger.warning("Failed to estimate Aptos gas, using default", error=str(e))
+            return 0.002 # Fallback
     
     async def wait_for_finality(self, tx_hash: str, timeout: int = 30) -> bool:
         """Wait for transaction finality"""
@@ -203,7 +231,7 @@ class AptosClient:
             self.logger.error("Failed to escrow funds", error=str(e))
             raise
 
-    async def release_funds(self, payment_id: str, recipient_address: str) -> str:
+    async def release_funds(self, payment_id: str, recipient_address: str, amount: float = 0.0) -> str:
         """
         Call Smart Contract: release_funds
         """
@@ -213,6 +241,9 @@ class AptosClient:
             module_name = "settlement"
             function_name = "release_funds"
             
+            # Amount to Octas
+            amount_octas = int(amount * 100_000_000)
+
             # Fix AccountAddress.from_str -> AccountAddress.from_hex
             try:
                 recipient = AccountAddress.from_hex(recipient_address)
@@ -226,7 +257,8 @@ class AptosClient:
                 [], 
                 [
                     TransactionArgument(MoveString(payment_id), Serializer.struct),
-                    TransactionArgument(recipient, Serializer.struct)
+                    TransactionArgument(recipient, Serializer.struct),
+                    TransactionArgument(amount_octas, Serializer.u64)
                 ]
             )
             
