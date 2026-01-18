@@ -24,45 +24,59 @@ async def calculate_route(request: schemas.RoutingRequest):
              raise HTTPException(status_code=503, detail="Routing Engine Circuit OPEN (Downstream Failure)")
 
         try:
-            engine = PaymentRouter()
+            # Use new Adapter Logic
+            logger.info("loading_routing_service")
+            from applications.capp.capp.services.routing_service import RoutingService
+            from applications.capp.capp.models.payments import PaymentPreferences
             
-            # Calculate Mocked Routes
-            routes_dtos = await engine.calculate_routes(
-                amount_usd=request.amount, 
-                recipient=request.recipient, 
-                preference=request.preference
+            engine = RoutingService()
+            
+            logger.info("mapping_preferences", req_pref=request.preference)
+            # Map request to preferences
+            prefs = PaymentPreferences(
+                prioritize_cost=(request.preference == "CHEAP"),
+                prioritize_speed=(request.preference == "FAST")
             )
+            
+            logger.info("calculating_routes")
+            # Calculate Routes (returns List[dict])
+            quotes = await engine.calculate_best_route(
+                amount=request.amount, 
+                currency="USDC", # MVP assumption
+                destination=request.recipient, 
+                preferences=prefs
+            )
+            logger.info("routes_calculated", count=len(quotes))
+            
             # Record Success if we get here
             cb.record_success()
             
         except Exception as e:
             # Record Failure
             cb.record_failure()
-            logger.error("Routing calculation internal error", error=str(e))
+            logger.error("Routing calculation internal error", error=str(e), traceback=True)
             raise e
         
         # Map DTOs to Schema
         api_routes = []
-        best_score = -1000
         best_route = None
         
-        for r in routes_dtos:
-            route_model = schemas.PaymentRoute(
-                chain=r.chain,
-                fee_usd=r.fee_usd,
-                eta_seconds=r.eta_seconds,
-                recommendation_score=r.recommendation_score,
-                reason=r.reason,
-                estimated_gas_token=r.estimated_gas_token
-            )
-            api_routes.append(route_model)
-            
-            if route_model.recommendation_score > best_score:
-                best_score = route_model.recommendation_score
-                best_route = route_model
+        for q in quotes:
+            try:
+                route_model = schemas.PaymentRoute(
+                    chain=q["rail"],
+                    fee_usd=q["fee"],
+                    eta_seconds=int(q["estimated_time_minutes"] * 60),
+                    recommendation_score=q["score"],
+                    reason=f"Fee: {q['fee']}, Time: {q['estimated_time_minutes']}m",
+                    estimated_gas_token=0.0 # Mock
+                )
+                api_routes.append(route_model)
+            except Exception as map_err:
+                 logger.error("mapping_error", quote=q, error=str(map_err))
         
-        if not best_route and api_routes:
-            best_route = api_routes[0]
+        if api_routes:
+            best_route = api_routes[0] # Already sorted by service
 
         return {
             "routes": api_routes,
