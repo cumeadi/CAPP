@@ -174,19 +174,21 @@ export default function Home() {
 
    // Handle Autonomy Change
    const handleAutonomyChange = async (level: AutonomyLevel) => {
-      setAutonomyLevel(level);
+      const previousLevel = autonomyLevel;
+      setAutonomyLevel(level); // Optimistic UI update
       try {
-         // Map UI level to Backend level
-         // UI: COPILOT, GUARDED, SOVEREIGN
-         // Backend: COPILOT, GUARDED, SOVEREIGN
+         // Fetch current config first to respect existing settings
+         const currentConfig = await api.getAgentConfig();
+
          await api.updateAgentConfig({
-            risk_profile: 'BALANCED', // TODO: Fetch current
-            autonomy_level: level as any,
-            hedge_threshold: 5, // TODO: Fetch current
-            network: 'TESTNET'
+            ...currentConfig,
+            autonomy_level: level,
          });
+
       } catch (e) {
          console.error("Failed to update autonomy", e);
+         // Revert UI if API call fails
+         setAutonomyLevel(previousLevel);
       }
    };
 

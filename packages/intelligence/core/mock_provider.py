@@ -74,20 +74,24 @@ class MockLLMProvider(LLMProvider):
             risk_level = "LOW"
             recommendation = "PROCEED"
             reasoning = "Market conditions are stable. Low volatility detected."
+            confidence_score = 92.0
             
             if "high" in prompt_lower and "volatility" in prompt_lower:
                 risk_level = "HIGH"
                 recommendation = "WAIT"
                 reasoning = "High volatility detected. Recommended to wait for stabilization."
+                confidence_score = 85.0
             elif "apt" in prompt_lower: # Mock APT as volatile for testing
                 risk_level = "HIGH"
                 recommendation = "PROCEED_WITH_CAUTION"
                 reasoning = "Asset is experiencing moderate fluctuations."
+                confidence_score = 65.0
                 
             return {
                 "risk_level": risk_level,
                 "recommendation": recommendation,
-                "reasoning": reasoning
+                "reasoning": reasoning,
+                "confidence_score": locals().get('confidence_score', 80.0)
             }
 
         # Check for Sanctioned Names (Phonetic/Fuzzy simulation)

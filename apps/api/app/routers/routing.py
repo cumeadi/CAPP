@@ -16,14 +16,30 @@ async def calculate_route(request: schemas.RoutingRequest):
     Calculate optimal payment routes based on amount, recipient, and preference.
     """
     try:
-        engine = PaymentRouter()
+        # Resilience: Circuit Breaker
+        from applications.capp.capp.services.circuit_breaker import get_circuit_breaker
+        cb = get_circuit_breaker("routing_engine")
         
-        # Calculate Mocked Routes
-        routes_dtos = await engine.calculate_routes(
-            amount_usd=request.amount, 
-            recipient=request.recipient, 
-            preference=request.preference
-        )
+        if cb.is_open():
+             raise HTTPException(status_code=503, detail="Routing Engine Circuit OPEN (Downstream Failure)")
+
+        try:
+            engine = PaymentRouter()
+            
+            # Calculate Mocked Routes
+            routes_dtos = await engine.calculate_routes(
+                amount_usd=request.amount, 
+                recipient=request.recipient, 
+                preference=request.preference
+            )
+            # Record Success if we get here
+            cb.record_success()
+            
+        except Exception as e:
+            # Record Failure
+            cb.record_failure()
+            logger.error("Routing calculation internal error", error=str(e))
+            raise e
         
         # Map DTOs to Schema
         api_routes = []

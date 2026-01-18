@@ -26,11 +26,12 @@ Task:
 1. Assess the risk level (LOW, MEDIUM, HIGH).
 2. Recommend an action (PROCEED, PROCEED_WITH_CAUTION, WAIT).
 3. Provide a short reasoning.
+4. Assign a Confidence Score (0-100) based on data quality and market clarity.
 
 Output JSON Format:
-{{
     "risk_level": "string",
     "recommendation": "string",
-    "reasoning": "string"
+    "reasoning": "string",
+    "confidence_score": "number (0-100)"
 }}
 """

@@ -101,15 +101,45 @@ class YieldService:
 
     async def _execute_sweep(self, amount: Decimal, currency: str):
         """Mock execution of sweeping funds to Aave"""
-        self.logger.info(f"Sweeping {amount} {currency} to Aave V3 on Arbitrum...")
         
-        # Simulate blockchain delay
-        await asyncio.sleep(1) 
+        # Resilience: Graceful Fallback
+        # Primary Strategy: Aggressive Yield (e.g. Yearn)
+        # Safe Harbor: Aave V3
         
-        # Update Mock State
-        self._mock_yield_balances[currency] = self._mock_yield_balances.get(currency, Decimal("0")) + amount
-        
-        self.logger.info("Sweep completed successfully.")
+        try:
+            self.logger.info(f"Sweeping {amount} {currency} to Primary Strategy (Yearn)...")
+            # Simulate chance of failure
+            # raise Exception("Primary Strategy Unreachable (SIMULATED FAILURE)") 
+            
+            # Simulate blockchain delay
+            await asyncio.sleep(1) 
+            
+            # Update Mock State (Primary)
+            self._mock_yield_balances[currency] = self._mock_yield_balances.get(currency, Decimal("0")) + amount
+            self.logger.info("Sweep completed successfully to Primary Strategy.")
+            
+        except Exception as e:
+            self.logger.error(f"Critical Sweep Failure: {e}")
+            
+            # DLQ Capture
+            try:
+                from applications.capp.capp.services.dlq_service import DLQService
+                dlq = DLQService()
+                task_id = await dlq.capture_failure(
+                    task_type="YIELD_SWEEP",
+                    payload={"amount": float(amount), "currency": currency},
+                    exception=e
+                )
+                self.logger.info(f"Failure captured in DLQ. Task ID: {task_id}")
+            except Exception as dlq_err:
+                self.logger.error(f"Failed to save to DLQ: {dlq_err}")
+            # Safe Harbor Execution
+            self.logger.info(f"Redirecting {amount} {currency} to Safe Harbor (Aave V3)...")
+            await asyncio.sleep(1)
+            
+            # Update Mock State (Safe Harbor is same bucket for mock simplicity, but logically distinct)
+            self._mock_yield_balances[currency] = self._mock_yield_balances.get(currency, Decimal("0")) + amount
+            self.logger.info("Sweep completed successfully to Safe Harbor.")
 
     async def request_liquidity(self, amount: Decimal, currency: str) -> bool:
         """
