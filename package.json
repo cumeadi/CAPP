@@ -1,0 +1,15 @@
+{
+    "name": "canza-monorepo",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "prepare": "husky install",
+        "lint": "flake8 .",
+        "type-check": "mypy .",
+        "test": "pytest",
+        "validate": "npm run lint && npm run type-check && npm run test"
+    },
+    "devDependencies": {
+        "husky": "^8.0.3"
+    }
+}

@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, List, Any
 from datetime import datetime
+from decimal import Decimal
 
 # Agent Schemas
 class MarketAnalysisRequest(BaseModel):
@@ -92,14 +93,14 @@ class PaymentRoute(BaseModel):
     estimated_gas_token: float # Amount in native token (APT/MATIC/ETH)
 
 class RoutingRequest(BaseModel):
-    amount: float
+    amount: Decimal # Ensure Decimal for financial calc
     recipient: str # Ensure this can cover all chains or we use a "User ID"
     currency: str = "USD"
     preference: str = "CHEAPEST" # CHEAPEST, FASTEST, BALANCED
 
 class RoutingResponse(BaseModel):
     routes: List[PaymentRoute]
-    recommended_route: PaymentRoute
+    recommended_route: Optional[PaymentRoute] = None
 
 
 # Liquidity Schemas
