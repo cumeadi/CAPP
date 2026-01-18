@@ -11,6 +11,7 @@ class MarketAnalysisResponse(BaseModel):
     risk_level: str
     recommendation: str
     reasoning: str
+    confidence_score: float = 50.0 # 0-100
     timestamp: datetime
 
 # Extended Schemas for Phase 3D
@@ -54,6 +55,9 @@ class TransactionRequest(BaseModel):
     
     # Optional Routing
     target_chain: Optional[str] = None
+    
+    # Resilience
+    idempotency_key: Optional[str] = None
 
 class TransactionResponse(BaseModel):
     tx_hash: str

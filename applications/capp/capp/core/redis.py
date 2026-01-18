@@ -210,6 +210,25 @@ class MockRedisClient:
         self._data.clear()
         self._expiry.clear()
 
+    async def setnx(self, key: str, value: str) -> bool:
+        """Mock setnx"""
+        # DEBUG LOG
+        logger.info(f"DEBUG: MockRedis.setnx called", key=key, existing_keys=list(self._data.keys()))
+        
+        if key in self._data:
+            # Check expiry
+            if key in self._expiry and self._expiry[key] < asyncio.get_event_loop().time():
+                logger.info(f"DEBUG: Key {key} expired.")
+                del self._data[key]
+                del self._expiry[key]
+            else:
+                logger.info(f"DEBUG: Key {key} EXISTS. Returning False.")
+                return False # Key exists
+                
+        self._data[key] = value
+        logger.info(f"DEBUG: Key {key} SET. Returning True.")
+        return True
+
 
 class RedisCache:
     """Redis cache wrapper with serialization support"""
@@ -253,6 +272,29 @@ class RedisCache:
                 
         except Exception as e:
             logger.warning("Failed to set cache", key=key, error=str(e))
+            return False
+            
+    async def setnx(self, key: str, value: Any) -> bool:
+        """Set value if not exists (Atomic Lock)"""
+        try:
+            # Try JSON serialization first, fallback to pickle
+            try:
+                serialized = json.dumps(value)
+            except (TypeError, ValueError):
+                serialized = str(value)
+            
+            # Use set(nx=True) which is modern Redis API, or setnx if available
+            if hasattr(self.redis, "setnx"):
+                # MockRedis or older redis-py
+                result = await self.redis.setnx(key, serialized)
+            else:
+                # Modern redis-py uses set(nx=True)
+                result = await self.redis.set(key, serialized, nx=True)
+                
+            return bool(result)
+                
+        except Exception as e:
+            logger.warning("Failed to setnx cache", key=key, error=str(e))
             return False
     
     async def delete(self, key: str) -> bool:

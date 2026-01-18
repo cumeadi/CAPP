@@ -9,12 +9,14 @@ interface YieldRadarProps {
         risk_level: string;
         recommendation: string;
         reasoning: string;
+        confidence_score?: number;
     };
 }
 
 export default function YieldRadar({ prediction }: YieldRadarProps) {
     const isBullish = prediction.recommendation === 'BUY' || prediction.recommendation === 'HOLD';
-    const confidence = isBullish ? 85 : 45; // Mock confidence based on rec
+    // Use real confidence score if available, else fallback
+    const confidence = prediction.confidence_score ? prediction.confidence_score : (isBullish ? 85 : 45);
 
     return (
         <div className="glass-card p-6 rounded-3xl relative overflow-hidden">

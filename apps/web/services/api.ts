@@ -1,10 +1,11 @@
-const API_BASE = 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export interface MarketAnalysisResponse {
     symbol: string;
     risk_level: string;
     recommendation: string;
     reasoning: string;
+    confidence_score: number;
     timestamp: string;
 }
 
@@ -240,14 +241,18 @@ export const api = {
     },
     // Smart Sweep & Compliance
     getYieldStats: async (): Promise<YieldStatsResponse> => {
-        // Mock for now, would call /finance/yield/stats
-        return {
-            total_value_usd: 65420.50,
-            hot_wallet_balance: 15420.50,
-            yield_balance: 50000.00,
-            apy: 6.8, // Updated for "Smart Sweep" demo
-            is_sweeping: true
-        };
+        const res = await fetch(`${API_BASE}/wallet/stats`);
+        if (!res.ok) {
+            console.warn('Failed to fetch stats, falling back to 0');
+            return {
+                total_value_usd: 0,
+                hot_wallet_balance: 0,
+                yield_balance: 0,
+                apy: 0,
+                is_sweeping: false
+            };
+        }
+        return res.json();
     },
 
     getComplianceQueue: async (): Promise<ComplianceCase[]> => {

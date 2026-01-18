@@ -53,3 +53,11 @@ async def health_check(db: Session = Depends(database.get_db)):
          # Not critical for app start, but good to know
     
     return health_status
+
+@router.post("/sweep")
+async def trigger_sweep():
+    """Manually trigger Smart Sweep for testing."""
+    from applications.capp.capp.services.yield_service import YieldService
+    service = YieldService()
+    await service.monitor_idle_funds()
+    return {"status": "Sweep Triggered"}

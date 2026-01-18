@@ -62,6 +62,8 @@ app.include_router(bridge.router)
 app.include_router(starknet.router)
 app.include_router(routing.router)
 app.include_router(system.router)
+from .routers import admin_dlq
+app.include_router(admin_dlq.router)
 
 @app.get("/")
 async def root():

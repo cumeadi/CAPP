@@ -131,6 +131,7 @@ async def analyze_market(symbol: str, db: Session = Depends(database.get_db)):
             risk_level=result.get("risk_level", "UNKNOWN"),
             recommendation=result.get("recommendation", "UNKNOWN"),
             reasoning=adjusted_reasoning,
+            confidence_score=result.get("confidence_score", 50.0),
             timestamp=datetime.utcnow()
         )
     except Exception as e:
