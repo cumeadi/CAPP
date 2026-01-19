@@ -40,25 +40,36 @@ class YieldService:
         self.MIN_SWEEP_AMOUNT = Decimal("1000.00")   # Min amount to bridge/deposit
         
         # Mock State for "Yield Protocol" balances
-        # In reality, this would query Aave/Compound contracts
+        # Structure: { "wallet_address": { "USDC": Decimal(...), ... } }
         self._mock_yield_balances = {
-            "USDC": Decimal("50000.00"),
-            "ETH": Decimal("10.0")
+            "internal_hot_wallet": {
+                "USDC": Decimal("50000.00"),
+                "ETH": Decimal("10.0")
+            }
         }
     
-    async def get_total_treasury_balance(self) -> Dict[str, Any]:
+    async def get_total_treasury_balance(self, wallet_address: str = "internal_hot_wallet") -> Dict[str, Any]:
         """
-        Get aggregated treasury balance (Hot + Yield)
+        Get aggregated treasury balance (Hot + Yield) for a specific wallet.
         """
-        # In a real app, fetch hot wallet balance from RPC/DB
-        hot_balance_usdc = Decimal("15000.00") 
-        hot_balance_eth = Decimal("2.5")
+        # In a real app, fetch hot wallet balance from RPC/DB for the specific address
+        # For mock purposes, we'll assume different balances based on address to prove multi-tenancy
+        if wallet_address == "internal_hot_wallet":
+            hot_balance_usdc = Decimal("15000.00")
+            hot_balance_eth = Decimal("2.5")
+        else:
+            # Simulate an external client wallet
+            hot_balance_usdc = Decimal("50000.00")
+            hot_balance_eth = Decimal("10.0")
         
-        yield_balance_usdc = self._mock_yield_balances.get("USDC", Decimal("0"))
-        yield_balance_eth = self._mock_yield_balances.get("ETH", Decimal("0"))
+        # Get yield balances for this specific wallet
+        wallet_yield = self._mock_yield_balances.get(wallet_address, {})
+        yield_balance_usdc = wallet_yield.get("USDC", Decimal("0"))
+        yield_balance_eth = wallet_yield.get("ETH", Decimal("0"))
         
         return {
-            "total_usd_value": float((hot_balance_usdc + yield_balance_usdc) + ((hot_balance_eth + yield_balance_eth) * 2500)), # Mock ETH price
+            "wallet_address": wallet_address,
+            "total_usd_value": float((hot_balance_usdc + yield_balance_usdc) + ((hot_balance_eth + yield_balance_eth) * 2500)),
             "breakdown": {
                 "USDC": {
                     "hot": float(hot_balance_usdc),
@@ -73,102 +84,83 @@ class YieldService:
             }
         }
 
-    async def monitor_idle_funds(self):
+    async def optimize_wallet(self, wallet_address: str, config: Optional[Dict] = None):
         """
-        Periodic task to sweep excess hot wallet funds.
-        Should be called by a background worker.
+        SDK Hook: Analyze and optimize a specific wallet's idle funds.
         """
-        self.logger.info("Monitoring idle funds for Smart Sweep...")
+        self.logger.info(f"Optimizing wallet: {wallet_address}...", config=config)
         
-        # 1. Get Hot Wallet Balance (Mocked)
-        hot_balance = Decimal("15000.00") # USDC
+        # Use provided config or default
+        min_sweep = Decimal(str(config.get("min_sweep_amount", self.MIN_SWEEP_AMOUNT))) if config else self.MIN_SWEEP_AMOUNT
+        buffer_pct = Decimal(str(config.get("buffer_pct", self.HOT_WALLET_BUFFER_PCT))) if config else self.HOT_WALLET_BUFFER_PCT
+
+        # 1. Get Wallet Balance (Mocked based on address)
+        # In production, this would use self.chain_client.get_balance(wallet_address)
+        if wallet_address == "internal_hot_wallet":
+            hot_balance = Decimal("15000.00") # Internal
+        else:
+            hot_balance = Decimal("50000.00") # External Client
+            
+        # 2. Get Current Yield Balance for this wallet
+        wallet_yield = self._mock_yield_balances.get(wallet_address, {})
+        yield_balance = wallet_yield.get("USDC", Decimal("0"))
         
-        # 2. Calculate Target Buffer
-        # If we have 15k hot + 50k cold = 65k total. 
-        # Target buffer = 20% of 65k = 13k.
-        # Excess = 15k - 13k = 2k.
-        
-        total_balance = hot_balance + self._mock_yield_balances.get("USDC", Decimal("0"))
-        target_buffer = total_balance * self.HOT_WALLET_BUFFER_PCT
-        
+        # 3. Calculate Target
+        total_balance = hot_balance + yield_balance
+        target_buffer = total_balance * buffer_pct
         excess = hot_balance - target_buffer
         
-        if excess > self.MIN_SWEEP_AMOUNT:
-            self.logger.info(f"Smart Sweep Triggered: Found ${excess} excess idle funds.")
-            await self._execute_sweep(excess, "USDC")
+        if excess > min_sweep:
+            self.logger.info(f"Smart Sweep Triggered for {wallet_address}: Found ${excess} excess.")
+            await self._execute_sweep(wallet_address, excess, "USDC")
         else:
-            self.logger.info(f"No sweep needed. Excess ${excess} < Min ${self.MIN_SWEEP_AMOUNT}")
+            self.logger.info(f"No sweep needed for {wallet_address}. Excess ${excess} < Min ${min_sweep}")
 
-    async def _execute_sweep(self, amount: Decimal, currency: str):
-        """Mock execution of sweeping funds to Aave"""
-        
-        # Resilience: Graceful Fallback
-        # Primary Strategy: Aggressive Yield (e.g. Yearn)
-        # Safe Harbor: Aave V3
-        
+    async def _execute_sweep(self, wallet_address: str, amount: Decimal, currency: str):
+        """Mock execution of sweeping funds to Aave for a specific wallet"""
         try:
-            self.logger.info(f"Sweeping {amount} {currency} to Primary Strategy (Yearn)...")
-            # Simulate chance of failure
-            # raise Exception("Primary Strategy Unreachable (SIMULATED FAILURE)") 
+            self.logger.info(f"Sweeping {amount} {currency} for {wallet_address} to Strategy (Aave V3)...")
+            await asyncio.sleep(0.5)
             
-            # Simulate blockchain delay
-            await asyncio.sleep(1) 
+            # Initialize wallet dict if not exists
+            if wallet_address not in self._mock_yield_balances:
+                self._mock_yield_balances[wallet_address] = {}
+                
+            current_yield = self._mock_yield_balances[wallet_address].get(currency, Decimal("0"))
+            self._mock_yield_balances[wallet_address][currency] = current_yield + amount
             
-            # Update Mock State (Primary)
-            self._mock_yield_balances[currency] = self._mock_yield_balances.get(currency, Decimal("0")) + amount
-            self.logger.info("Sweep completed successfully to Primary Strategy.")
+            self.logger.info(f"Sweep completed for {wallet_address}. New Yield Balance: {self._mock_yield_balances[wallet_address][currency]}")
             
         except Exception as e:
-            self.logger.error(f"Critical Sweep Failure: {e}")
-            
-            # DLQ Capture
-            try:
-                from applications.capp.capp.services.dlq_service import DLQService
-                dlq = DLQService()
-                task_id = await dlq.capture_failure(
-                    task_type="YIELD_SWEEP",
-                    payload={"amount": float(amount), "currency": currency},
-                    exception=e
-                )
-                self.logger.info(f"Failure captured in DLQ. Task ID: {task_id}")
-            except Exception as dlq_err:
-                self.logger.error(f"Failed to save to DLQ: {dlq_err}")
-            # Safe Harbor Execution
-            self.logger.info(f"Redirecting {amount} {currency} to Safe Harbor (Aave V3)...")
-            await asyncio.sleep(1)
-            
-            # Update Mock State (Safe Harbor is same bucket for mock simplicity, but logically distinct)
-            self._mock_yield_balances[currency] = self._mock_yield_balances.get(currency, Decimal("0")) + amount
-            self.logger.info("Sweep completed successfully to Safe Harbor.")
+            self.logger.error(f"Sweep Failure for {wallet_address}: {e}")
 
-    async def request_liquidity(self, amount: Decimal, currency: str) -> bool:
+    async def request_liquidity(self, wallet_address: str, amount: Decimal, currency: str) -> bool:
         """
-        Request liquidity for a payment.
-        If Hot Wallet is insufficient, triggers JIT Unwinding from Yield.
-        Returns True if liquidity is available (immediately or after unwind), False otherwise.
+        Request liquidity for a specific wallet. Unwinds yield if needed.
         """
-        hot_balance = Decimal("5000.00") # Mock lower balance for testing JIT
-        
+        # Mock hot balances
+        if wallet_address == "internal_hot_wallet":
+            hot_balance = Decimal("5000.00")
+        else:
+            hot_balance = Decimal("1000.00") # Simulating low liquid funds for external client to trigger unwind
+
         if hot_balance >= amount:
-            self.logger.info("Sufficient Hot Wallet liquidity available.")
             return True
             
         shortfall = amount - hot_balance
-        self.logger.warning(f"Insufficient Hot Liquidity. Shortfall: {shortfall} {currency}. Initiating JIT Unwind...")
+        self.logger.warning(f"Insufficient Hot Liquidity for {wallet_address}. Shortfall: {shortfall}. Initiating Unwind...")
         
-        # Check Yield Balance
-        yield_balance = self._mock_yield_balances.get(currency, Decimal("0"))
+        wallet_yield = self._mock_yield_balances.get(wallet_address, {})
+        yield_balance = wallet_yield.get(currency, Decimal("0"))
+        
         if yield_balance < shortfall:
-            self.logger.error("Critical: Insufficient Total Liquidity (Hot + Yield).")
+            self.logger.error(f"Critical: Insufficient Total Liquidity for {wallet_address}.")
             return False
             
-        # Trigger Unwind
-        self.logger.info(f"Unwinding {shortfall} {currency} from Yield Protocol...")
-        # Simulate time for unbonding/withdrawing (would be async in reality)
-        await asyncio.sleep(2) 
+        # Unwind
+        self.logger.info(f"Unwinding {shortfall} {currency} for {wallet_address}...")
+        await asyncio.sleep(1)
         
-        # Update Mock State
-        self._mock_yield_balances[currency] -= shortfall
-        
-        self.logger.info("Liquidity Unwound using Smart Sweep JIT.")
+        self._mock_yield_balances[wallet_address][currency] -= shortfall
+        self.logger.info(f"Liquidity Unwound for {wallet_address}.")
         return True
