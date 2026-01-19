@@ -378,6 +378,14 @@ class RedisCache:
         except Exception as e:
             logger.warning("Failed to set hash field", key=key, field=field, error=str(e))
             return False
+            
+    async def hincrby(self, key: str, field: str, amount: int = 1) -> int:
+        """Increment hash field"""
+        try:
+            return await self.redis.hincrby(key, field, amount)
+        except Exception as e:
+            logger.warning("Failed to increment hash field", key=key, field=field, error=str(e))
+            return 0
     
     async def hgetall(self, key: str) -> dict:
         """Get all hash fields"""
@@ -437,6 +445,14 @@ class RedisCache:
         except Exception as e:
             logger.warning("Failed to get list length", key=key, error=str(e))
             return 0
+            
+    async def ltrim(self, key: str, start: int, end: int) -> bool:
+        """Trim list"""
+        try:
+            return await self.redis.ltrim(key, start, end)
+        except Exception as e:
+            logger.warning("Failed to trim list", key=key, error=str(e))
+            return False
 
 
 # Global cache instance

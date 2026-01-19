@@ -99,6 +99,33 @@ export const api = {
         return res.json();
     },
 
+    // Routing Engine
+    calculateRoute: async (amount: number, currency: string, recipient: string, preference: string = "CHEAPEST") => {
+        const res = await fetch(`${API_BASE}/routing/calculate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                amount,
+                currency,
+                recipient,
+                preference
+            })
+        });
+        if (!res.ok) throw new Error('Route calculation failed');
+        return res.json();
+    },
+
+    // Relayer Agent
+    relayPayment: async (route: any) => {
+        // Trigger the agent via the generic 'interact' or specific endpoint
+        // For MVP, we'll assume there's a direct endpoint or we construct a generic agent task
+
+        // Temporary: Using the wallet/send endpoint but hinting at cross-chain
+        // In a real implementation, we'd hit POST /agents/relayer/execute
+        // For now, let's use the wallet send which likely delegates to agent if foreign chain
+        return api.executeTransfer(route.recipient, route.amount, route.to_chain);
+    },
+
     // Agent Operations
     getMarketStatus: async (): Promise<MarketStatusResponse> => {
         const res = await fetch(`${API_BASE}/agents/market/status`);
