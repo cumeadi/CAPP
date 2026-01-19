@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from .. import schemas
 from applications.capp.capp.core.router import PaymentRouter, RouteOption
 import structlog
+from applications.capp.capp.core.limiter import limiter
 
 logger = structlog.get_logger(__name__)
 
@@ -11,11 +12,16 @@ router = APIRouter(
 )
 
 @router.post("/calculate", response_model=schemas.RoutingResponse)
-async def calculate_route(request: schemas.RoutingRequest):
+@limiter.limit("5/minute")
+async def calculate_route(routing_req: schemas.RoutingRequest, request: Request):
     """
     Calculate optimal payment routes based on amount, recipient, and preference.
     """
     try:
+        logger.info("routing_calculation_started", 
+                    amount=float(routing_req.amount), 
+                    currency=routing_req.currency)
+        
         # Resilience: Circuit Breaker
         from applications.capp.capp.services.circuit_breaker import get_circuit_breaker
         cb = get_circuit_breaker("routing_engine")
@@ -31,19 +37,19 @@ async def calculate_route(request: schemas.RoutingRequest):
             
             engine = RoutingService()
             
-            logger.info("mapping_preferences", req_pref=request.preference)
+            logger.info("mapping_preferences", req_pref=routing_req.preference)
             # Map request to preferences
             prefs = PaymentPreferences(
-                prioritize_cost=(request.preference == "CHEAP"),
-                prioritize_speed=(request.preference == "FAST")
+                prioritize_cost=(routing_req.preference in ["CHEAP", "CHEAPEST"]),
+                prioritize_speed=(routing_req.preference in ["FAST", "FASTEST"])
             )
             
             logger.info("calculating_routes")
             # Calculate Routes (returns List[dict])
             quotes = await engine.calculate_best_route(
-                amount=request.amount, 
+                amount=routing_req.amount, 
                 currency="USDC", # MVP assumption
-                destination=request.recipient, 
+                destination=routing_req.recipient, 
                 preferences=prefs
             )
             logger.info("routes_calculated", count=len(quotes))

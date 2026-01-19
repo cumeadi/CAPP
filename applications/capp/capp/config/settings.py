@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     )
     
     # Database
+    APTOS_NODE_URL: str = Field(
+        default="https://api.testnet.aptoslabs.com/v1",
+        env="APTOS_NODE_URL"
+    )
+    APTOS_FAUCET_URL: str = Field(
+        default="https://faucet.testnet.aptoslabs.com",
+        env="APTOS_FAUCET_URL"
+    )
+    APTOS_PRIVATE_KEY: Optional[str] = Field(default=None, env="APTOS_PRIVATE_KEY")
+    APTOS_ACCOUNT_ADDRESS: Optional[str] = Field(default=None, env="APTOS_ACCOUNT_ADDRESS")
+    # Database
     DATABASE_URL: str = Field(default="postgresql+asyncpg://demo:demo@localhost:5432/capp_demo", env="DATABASE_URL")
     DATABASE_POOL_SIZE: int = Field(default=20, env="DATABASE_POOL_SIZE")
     DATABASE_MAX_OVERFLOW: int = Field(default=30, env="DATABASE_MAX_OVERFLOW")
@@ -61,25 +72,13 @@ class Settings(BaseSettings):
         env="KAFKA_TOPIC_SETTLEMENTS"
     )
     
-    # Aptos Blockchain
-    APTOS_NODE_URL: str = Field(
-        default="https://api.testnet.aptoslabs.com/v1",
-        env="APTOS_NODE_URL"
-    )
-    APTOS_FAUCET_URL: str = Field(
-        default="https://faucet.testnet.aptoslabs.com",
-        env="APTOS_FAUCET_URL"
-    )
-    APTOS_PRIVATE_KEY: str = Field(default="demo-private-key", env="APTOS_PRIVATE_KEY")
-    APTOS_ACCOUNT_ADDRESS: str = Field(default="demo-account-address", env="APTOS_ACCOUNT_ADDRESS")
-    
     # Starknet Blockchain
     STARKNET_NODE_URL: str = Field(
         default="https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/REDACTED_ALCHEMY_KEY",
         env="STARKNET_NODE_URL"
     )
-    STARKNET_ACCOUNT_ADDRESS: str = Field(default="0x0", env="STARKNET_ACCOUNT_ADDRESS")
-    STARKNET_PRIVATE_KEY: str = Field(default="0x0", env="STARKNET_PRIVATE_KEY")
+    STARKNET_ACCOUNT_ADDRESS: Optional[str] = Field(default=None, env="STARKNET_ACCOUNT_ADDRESS")
+    STARKNET_PRIVATE_KEY: Optional[str] = Field(default=None, env="STARKNET_PRIVATE_KEY")
     STARKNET_CHAIN_ID: str = Field(default="SN_SEPOLIA", env="STARKNET_CHAIN_ID")
     
     
@@ -89,7 +88,7 @@ class Settings(BaseSettings):
     ARBITRUM_RPC_URL: str = Field(default="https://arb-mainnet.g.alchemy.com/v2/REDACTED_ALCHEMY_KEY", env="ARBITRUM_RPC_URL")
     
     # Private Key for EVM transactions (Base/Arbitrum)
-    EVM_PRIVATE_KEY: str = Field(default="REDACTED_EVM_PRIVATE_KEY", env="EVM_PRIVATE_KEY")
+    EVM_PRIVATE_KEY: Optional[str] = Field(default=None, env="EVM_PRIVATE_KEY")
     APTOS_CONTRACT_ADDRESS: str = Field(
         default="0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", 
         env="APTOS_CONTRACT_ADDRESS"
@@ -100,7 +99,7 @@ class Settings(BaseSettings):
         default="https://polygon-mainnet.g.alchemy.com/v2/REDACTED_ALCHEMY_KEY",
         env="POLYGON_RPC_URL"
     )
-    POLYGON_PRIVATE_KEY: str = Field(default="demo-private-key", env="POLYGON_PRIVATE_KEY")
+    POLYGON_PRIVATE_KEY: Optional[str] = Field(default=None, env="POLYGON_PRIVATE_KEY")
     CHAIN_ID_POLYGON: int = Field(default=137, env="CHAIN_ID_POLYGON")
     
     # LiquidSwap (Pontem) DEX Address
@@ -201,6 +200,13 @@ class Settings(BaseSettings):
     
     # Removed KAFKA_BOOTSTRAP_SERVERS validator since field is now a string
     
+    @validator("SECRET_KEY")
+    def validate_secret_key(cls, v, values):
+        env = values.get("ENVIRONMENT", "development")
+        if env == "production" and v == "CHANGE_ME_SECRET_KEY":
+            raise ValueError("❌ FATAL: Application is in PRODUCTION mode but using default CHANGE_ME_SECRET_KEY! Set SECRET_KEY env var.")
+        return v
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
