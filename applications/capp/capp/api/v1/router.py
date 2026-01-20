@@ -4,7 +4,7 @@ Main API router for CAPP v1
 
 from fastapi import APIRouter
 
-from .endpoints import payments, auth, health
+from .endpoints import payments, auth, health, oracle
 
 api_router = APIRouter()
 
@@ -19,6 +19,13 @@ api_router.include_router(
     payments.router,
     prefix="/payments",
     tags=["payments"]
+)
+
+# Include Oracle endpoints
+api_router.include_router(
+    oracle.router,
+    prefix="/oracle",
+    tags=["oracle"]
 )
 
  
