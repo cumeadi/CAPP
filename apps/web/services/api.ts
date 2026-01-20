@@ -134,9 +134,18 @@ export const api = {
     },
 
     analyzeMarket: async (symbol: string = 'APT'): Promise<MarketAnalysisResponse> => {
-        const res = await fetch(`${API_BASE}/agents/market/analyze/${symbol}`);
-        if (!res.ok) throw new Error('Failed to fetch market analysis');
-        return res.json();
+        try {
+            const res = await fetch(`${API_BASE}/agents/market/analyze/${symbol}`);
+            if (!res.ok) {
+                const errorText = await res.text();
+                console.error(`Market Analysis Error (${res.status}): ${errorText}`);
+                throw new Error(`Failed to fetch market analysis: ${res.statusText}`);
+            }
+            return res.json();
+        } catch (error) {
+            console.error("Market Analysis Network Error:", error);
+            throw error;
+        }
     },
 
     checkCompliance: async (sender: string, recipient: string, amount: number): Promise<ComplianceCheckResponse> => {

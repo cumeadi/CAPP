@@ -14,7 +14,7 @@ import structlog
 from sqlalchemy import text
 from pydantic import BaseModel
 
-from .database import get_database_session
+from .database import AsyncSessionLocal
 from .redis import get_cache
 from ..config.settings import get_settings
 
@@ -75,7 +75,7 @@ class HealthChecker:
         checked_at = datetime.now(timezone.utc)
 
         try:
-            async with get_database_session() as session:
+            async with AsyncSessionLocal() as session:
                 # Execute simple query to check connectivity
                 result = await session.execute(text("SELECT 1"))
                 result.scalar()

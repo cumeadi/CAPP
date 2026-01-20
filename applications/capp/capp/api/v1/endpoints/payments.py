@@ -9,15 +9,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from ...models.payments import (
+from ....models.payments import (
     CrossBorderPayment, PaymentResult, PaymentStatus, PaymentType,
     PaymentMethod, Country, Currency, MMOProvider
 )
-from ...models.user import User
-from ...services.payment_service import PaymentService
-from ...core.database import get_db
-from ...core.redis import get_redis_client
-from ...api.dependencies.auth import get_current_active_user, get_optional_user
+from ....models.user import User
+from ....services.payment_service import PaymentService
+from ....core.database import get_db
+from ....core.redis import get_redis_client
+from ....api.dependencies.auth import get_current_active_user, get_optional_user
 
 router = APIRouter()
 
