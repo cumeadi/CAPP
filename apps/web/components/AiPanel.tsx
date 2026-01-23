@@ -82,7 +82,7 @@ export default function AiPanel({ marketStatus, decisionFeed, onChat, onApprove,
     return (
         <div className="flex flex-col gap-6">
             {/* AI Decision Feed */}
-            <div className="treasury-card p-6 h-[600px] flex flex-col">
+            <div className="treasury-card p-4 md:p-6 h-auto min-h-[500px] md:h-[600px] flex flex-col">
                 <div className="flex items-center gap-3 mb-6 pb-4 border-b border-border-subtle">
                     <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-bg-tertiary border border-border-medium text-xl">
                         🤖
@@ -210,7 +210,7 @@ export default function AiPanel({ marketStatus, decisionFeed, onChat, onApprove,
             </div>
 
             {/* Active Yield Radar */}
-            <div className="treasury-card p-6 flex flex-col h-[600px]">
+            <div className="treasury-card p-4 md:p-6 flex flex-col h-auto min-h-[500px] md:h-[600px]">
                 <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-2">
                         <Radar className="w-5 h-5 text-text-secondary" />

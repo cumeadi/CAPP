@@ -98,9 +98,9 @@ export default function DashboardPage() {
     <div className="space-y-12 animate-in fade-in duration-500">
 
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-xl font-bold text-white tracking-widest flex items-center gap-3">
+      <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+        <div className="text-center md:text-left">
+          <h1 className="text-xl font-bold text-white tracking-widest flex items-center justify-center md:justify-start gap-3">
             <Wallet className="w-6 h-6 text-[var(--accent-cyan)]" />
             CAPP WALLET
           </h1>
@@ -109,123 +109,125 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
           {/* Aptos Connect Button */}
           {!isAptosConnected ? (
-            <Button variant="outline" size="sm" onClick={handleConnectAptos} icon={LinkIcon} className="bg-[var(--bg-tertiary)] border-[var(--border-medium)] text-teal-400 hover:border-teal-400">
+            <Button variant="outline" size="sm" onClick={handleConnectAptos} icon={LinkIcon} className="w-full md:w-auto bg-[var(--bg-tertiary)] border-[var(--border-medium)] text-teal-400 hover:border-teal-400 justify-center">
               LINK APTOS
             </Button>
           ) : (
-            <div className="px-3 py-1 bg-[var(--bg-tertiary)] rounded-full border border-teal-500/50 flex items-center gap-2 cursor-pointer" onClick={() => disconnectAptos()}>
+            <div className="px-3 py-2 bg-[var(--bg-tertiary)] rounded-full border border-teal-500/50 flex items-center justify-center gap-2 cursor-pointer w-full md:w-auto" onClick={() => disconnectAptos()}>
               <div className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
               <span className="text-xs text-white font-mono">APT: {aptosAccount?.address?.toString().slice(0, 4)}...{aptosAccount?.address?.toString().slice(-4)}</span>
               <Unplug className="w-3 h-3 text-red-400 ml-1 hover:text-red-300" />
             </div>
           )}
 
-          <ConnectButton.Custom>
-            {/* ... (RainbowKit Custom Button Implementation remains same, assuming I can keep it or better to just let it replace the whole block) */}
-            {/* Since I am replacing the whole file content or large chunk, I'll paste the previous RainbowKit code here */}
-            {({
-              account,
-              chain,
-              openAccountModal,
-              openChainModal,
-              openConnectModal,
-              authenticationStatus,
-              mounted,
-            }) => {
-              const ready = mounted && authenticationStatus !== 'loading';
-              const connected =
-                ready &&
-                account &&
-                chain &&
-                (!authenticationStatus ||
-                  authenticationStatus === 'authenticated');
+          <div className="w-full md:w-auto flex justify-center">
+            <ConnectButton.Custom>
+              {/* ... (RainbowKit Custom Button Implementation remains same, assuming I can keep it or better to just let it replace the whole block) */}
+              {/* Since I am replacing the whole file content or large chunk, I'll paste the previous RainbowKit code here */}
+              {({
+                account,
+                chain,
+                openAccountModal,
+                openChainModal,
+                openConnectModal,
+                authenticationStatus,
+                mounted,
+              }) => {
+                const ready = mounted && authenticationStatus !== 'loading';
+                const connected =
+                  ready &&
+                  account &&
+                  chain &&
+                  (!authenticationStatus ||
+                    authenticationStatus === 'authenticated');
 
-              return (
-                <div
-                  {...(!ready && {
-                    'aria-hidden': true,
-                    'style': {
-                      opacity: 0,
-                      pointerEvents: 'none',
-                      userSelect: 'none',
-                    },
-                  })}
-                >
-                  {(() => {
-                    if (!connected) {
+                return (
+                  <div
+                    {...(!ready && {
+                      'aria-hidden': true,
+                      'style': {
+                        opacity: 0,
+                        pointerEvents: 'none',
+                        userSelect: 'none',
+                      },
+                    })}
+                  >
+                    {(() => {
+                      if (!connected) {
+                        return (
+                          <div className="px-3 py-1 bg-[var(--bg-tertiary)] rounded-full border border-[var(--border-medium)] flex items-center gap-2">
+                            <Button variant="primary" size="sm" onClick={openConnectModal}>
+                              CONNECT EVM
+                            </Button>
+                          </div>
+                        );
+                      }
+
+                      if (chain.unsupported) {
+                        return (
+                          <button onClick={openChainModal} type="button" className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full border border-red-500/50 text-xs font-bold">
+                            Wrong network
+                          </button>
+                        );
+                      }
+
                       return (
-                        <div className="px-3 py-1 bg-[var(--bg-tertiary)] rounded-full border border-[var(--border-medium)] flex items-center gap-2">
-                          <Button variant="primary" size="sm" onClick={openConnectModal}>
-                            CONNECT EVM
-                          </Button>
-                        </div>
-                      );
-                    }
+                        <div className="flex gap-3">
+                          <button
+                            onClick={openChainModal}
+                            style={{ display: 'flex', alignItems: 'center' }}
+                            type="button"
+                            className="px-3 py-1 bg-[var(--bg-tertiary)] rounded-full border border-[var(--border-medium)] flex items-center gap-2 text-white hover:border-[var(--accent-cyan)] transition-colors"
+                          >
+                            {chain.hasIcon && (
+                              <div
+                                style={{
+                                  background: chain.iconBackground,
+                                  width: 12,
+                                  height: 12,
+                                  borderRadius: 999,
+                                  overflow: 'hidden',
+                                  marginRight: 4,
+                                }}
+                              >
+                                {chain.iconUrl && (
+                                  <img
+                                    alt={chain.name ?? 'Chain icon'}
+                                    src={chain.iconUrl}
+                                    style={{ width: 12, height: 12 }}
+                                  />
+                                )}
+                              </div>
+                            )}
+                            <span className="text-xs font-bold">{chain.name}</span>
+                          </button>
 
-                    if (chain.unsupported) {
-                      return (
-                        <button onClick={openChainModal} type="button" className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full border border-red-500/50 text-xs font-bold">
-                          Wrong network
-                        </button>
-                      );
-                    }
-
-                    return (
-                      <div className="flex gap-3">
-                        <button
-                          onClick={openChainModal}
-                          style={{ display: 'flex', alignItems: 'center' }}
-                          type="button"
-                          className="px-3 py-1 bg-[var(--bg-tertiary)] rounded-full border border-[var(--border-medium)] flex items-center gap-2 text-white hover:border-[var(--accent-cyan)] transition-colors"
-                        >
-                          {chain.hasIcon && (
-                            <div
-                              style={{
-                                background: chain.iconBackground,
-                                width: 12,
-                                height: 12,
-                                borderRadius: 999,
-                                overflow: 'hidden',
-                                marginRight: 4,
-                              }}
-                            >
-                              {chain.iconUrl && (
-                                <img
-                                  alt={chain.name ?? 'Chain icon'}
-                                  src={chain.iconUrl}
-                                  style={{ width: 12, height: 12 }}
-                                />
-                              )}
+                          <div className="px-3 py-1 bg-[var(--bg-tertiary)] rounded-full border border-[var(--border-medium)] flex items-center gap-2">
+                            <div className="flex items-center gap-2 cursor-pointer" onClick={openAccountModal}>
+                              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                              <span className="text-xs text-white font-mono">{account.displayName}</span>
                             </div>
-                          )}
-                          <span className="text-xs font-bold">{chain.name}</span>
-                        </button>
-
-                        <div className="px-3 py-1 bg-[var(--bg-tertiary)] rounded-full border border-[var(--border-medium)] flex items-center gap-2">
-                          <div className="flex items-center gap-2 cursor-pointer" onClick={openAccountModal}>
-                            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                            <span className="text-xs text-white font-mono">{account.displayName}</span>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              );
-            }}
-          </ConnectButton.Custom>
+                      );
+                    })()}
+                  </div>
+                );
+              }}
+            </ConnectButton.Custom>
+          </div>
         </div>
       </div>
 
       {/* Hero Section: Total Balance */}
-      <div className="text-center py-10 relative">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[300px] bg-[var(--accent-primary)]/10 blur-[100px] -z-10 rounded-full pointer-events-none" />
+      <div className="text-center py-6 md:py-10 relative">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] md:w-[500px] h-[300px] bg-[var(--accent-primary)]/10 blur-[100px] -z-10 rounded-full pointer-events-none" />
 
-        <p className="text-[var(--accent-cyan)] font-mono text-sm tracking-[0.2em] mb-4 uppercase">Total Portfolio Value</p>
-        <h2 className="text-6xl md:text-7xl font-bold text-white tracking-tighter mb-4 text-glow font-mono">
+        <p className="text-[var(--accent-cyan)] font-mono text-xs md:text-sm tracking-[0.2em] mb-4 uppercase">Total Portfolio Value</p>
+        <h2 className="text-4xl md:text-7xl font-bold text-white tracking-tighter mb-4 text-glow font-mono">
           {(isConnected || isAptosConnected) ? `$${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "$0.00"}
         </h2>
         {yieldStats?.is_sweeping && (
@@ -237,16 +239,16 @@ export default function DashboardPage() {
       </div>
 
       {/* Quick Actions */}
-      <div className="flex flex-wrap justify-center gap-4">
-        <Link href="/send">
-          <Button variant="outline" size="lg" icon={Send} className="min-w-[160px] border-[var(--accent-cyan)] text-[var(--accent-cyan)] hover:bg-[var(--accent-cyan)] hover:text-black hover:shadow-[0_0_20px_rgba(0,255,179,0.4)]" disabled={!isConnected && !isAptosConnected}>SEND</Button>
+      <div className="grid grid-cols-2 md:flex md:flex-wrap justify-center gap-3 md:gap-4 px-2">
+        <Link href="/send" className="w-full md:w-auto">
+          <Button variant="outline" size="lg" icon={Send} className="w-full md:min-w-[160px] border-[var(--accent-cyan)] text-[var(--accent-cyan)] hover:bg-[var(--accent-cyan)] hover:text-black hover:shadow-[0_0_20px_rgba(0,255,179,0.4)]" disabled={!isConnected && !isAptosConnected}>SEND</Button>
         </Link>
-        <Button variant="secondary" size="lg" icon={Download} className="min-w-[160px]" disabled={!isConnected && !isAptosConnected}>DEPOSIT</Button>
-        <Link href="/receive">
-          <Button variant="secondary" size="lg" icon={QrCode} className="min-w-[160px]" disabled={!isConnected && !isAptosConnected}>RECEIVE</Button>
+        <Button variant="secondary" size="lg" icon={Download} className="w-full md:min-w-[160px]" disabled={!isConnected && !isAptosConnected}>DEPOSIT</Button>
+        <Link href="/receive" className="w-full md:w-auto">
+          <Button variant="secondary" size="lg" icon={QrCode} className="w-full md:min-w-[160px]" disabled={!isConnected && !isAptosConnected}>RECEIVE</Button>
         </Link>
-        <Link href="/settings">
-          <Button variant="secondary" size="lg" icon={Settings} className="min-w-[160px]" disabled={!isConnected && !isAptosConnected}>SETTINGS</Button>
+        <Link href="/settings" className="w-full md:w-auto">
+          <Button variant="secondary" size="lg" icon={Settings} className="w-full md:min-w-[160px]" disabled={!isConnected && !isAptosConnected}>SETTINGS</Button>
         </Link>
       </div>
 

@@ -42,11 +42,11 @@ export default function ComplianceShield() {
     if (cases.length === 0) return null;
 
     return (
-        <div className="fixed bottom-8 right-8 z-50">
+        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:bottom-8 md:right-8 z-50">
             <motion.div
                 initial={{ opacity: 0, y: 50 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-bg-secondary border border-accent-warning/30 rounded-xl shadow-2xl w-[400px] overflow-hidden backdrop-blur-md"
+                className="bg-bg-secondary border border-accent-warning/30 rounded-xl shadow-2xl w-full md:w-[400px] overflow-hidden backdrop-blur-md"
             >
                 <div className="p-4 bg-accent-warning/10 border-b border-accent-warning/20 flex justify-between items-center">
                     <div className="flex items-center gap-2 text-accent-warning">
