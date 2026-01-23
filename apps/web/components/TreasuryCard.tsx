@@ -45,9 +45,9 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
     const yieldBalance = yieldStats?.yield_balance ?? 0;
 
     return (
-        <div className="treasury-card p-8 rounded-2xl relative overflow-hidden">
+        <div className="treasury-card p-4 md:p-8 rounded-2xl relative overflow-hidden">
             {/* Card Header and Balance sections unchanged... */}
-            <div className="flex justify-between items-start mb-8">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
                 <div>
                     <div className="font-display text-lg font-bold text-text-primary uppercase tracking-wider mb-1">
                         CAPP Treasury
@@ -59,7 +59,7 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
                 </div>
 
                 {/* Wallet Connect */}
-                <div>
+                <div className="w-full md:w-auto">
                     <ConnectButton showBalance={false} accountStatus="address" chainStatus="icon" />
                 </div>
             </div>
@@ -69,7 +69,7 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
                 <div className="text-xs text-text-tertiary uppercase tracking-widest mb-2 font-mono">
                     Total Value (USD)
                 </div>
-                <div className="font-display text-6xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white to-text-secondary mb-2">
+                <div className="font-display text-4xl md:text-6xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white to-text-secondary mb-2">
                     ${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </div>
                 <div className="flex items-center gap-4 text-sm font-medium">

@@ -198,16 +198,16 @@ export default function Home() {
          <div className="background-grid"></div>
          <ComplianceShield />
 
-         <div className="container mx-auto px-6 py-8 relative z-10 max-w-[1400px]">
+         <div className="container mx-auto px-4 md:px-6 py-6 md:py-8 relative z-10 max-w-[1400px]">
 
             {/* Header */}
-            <header className="flex flex-col md:flex-row justify-between items-center mb-12 pb-6 border-b border-border-subtle">
-               <div className="flex items-center gap-4 mb-4 md:mb-0">
-                  <div className="w-10 h-10 bg-gradient-to-br from-accent-primary to-accent-secondary rounded-lg flex items-center justify-center font-display font-extrabold text-xl text-bg-primary animate-[bounce_3s_infinite]">
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 md:mb-12 pb-6 border-b border-border-subtle gap-6 md:gap-0">
+               <div className="flex items-center gap-4 w-full md:w-auto">
+                  <div className="w-10 h-10 bg-gradient-to-br from-accent-primary to-accent-secondary rounded-lg flex items-center justify-center font-display font-extrabold text-xl text-bg-primary animate-[bounce_3s_infinite] shrink-0">
                      ₵
                   </div>
                   <div>
-                     <div className="font-display text-2xl font-bold tracking-tight flex items-center gap-3">
+                     <div className="font-display text-xl md:text-2xl font-bold tracking-tight flex flex-wrap items-center gap-2 md:gap-3">
                         CAPP Treasury
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${systemHealth.status === 'healthy' ? 'bg-color-success/10 text-color-success border border-color-success/30' :
                            systemHealth.status === 'degraded' ? 'bg-accent-warning/10 text-accent-warning border border-accent-warning/30' :
@@ -223,8 +223,8 @@ export default function Home() {
                   </div>
                </div>
 
-               <div className="flex items-center gap-4">
-                  <div className="w-auto min-w-[320px]">
+               <div className="flex items-center gap-4 w-full md:w-auto">
+                  <div className="w-full md:w-auto md:min-w-[320px]">
                      <AutonomyDial value={autonomyLevel} onChange={handleAutonomyChange} />
                   </div>
                </div>
