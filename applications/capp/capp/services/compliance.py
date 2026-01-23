@@ -12,8 +12,16 @@ import structlog
 from applications.capp.capp.models.payments import PaymentRoute, Country, CrossBorderPayment
 from applications.capp.capp.config.settings import get_settings
 from packages.intelligence.compliance.agent import AIComplianceAgent
+import datetime
+import csv
+import io
 
 logger = structlog.get_logger(__name__)
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
+from applications.capp.capp.repositories.payment import PaymentRepository
+
 
 
 class ComplianceResult(BaseModel):
@@ -389,4 +397,59 @@ class ComplianceService:
     
     async def get_supported_countries(self) -> List[Country]:
         """Get list of supported countries with regulations"""
-        return list(self.country_regulations.keys()) 
+    async def get_supported_countries(self) -> List[Country]:
+        """Get list of supported countries with regulations"""
+        return list(self.country_regulations.keys())
+
+    async def generate_report(self, user_id: UUID, report_type: str, year: int, session: AsyncSession) -> Dict[str, str]:
+
+        """
+        Generate a compliance report (CSV or PDF/Text) for a user for a specific year.
+        """
+        repo = PaymentRepository(session)
+        # Fetch all payments for now, perform in-memory filtering for year for MVP convenience
+        # In prod, repo should support date range filtering
+        payments = await repo.get_by_user(user_id, limit=1000)
+        
+        filtered_payments = [
+            p for p in payments 
+            if p.created_at.year == year
+        ]
+        
+        if report_type.upper() == "CSV":
+            filename = f"capp_compliance_{year}.csv"
+            output = io.StringIO()
+            fieldnames = ["Date", "Payment ID", "Type", "Amount", "Currency", "Status", "Reference", "Description"]
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+
+            writer.writeheader()
+            for p in filtered_payments:
+                writer.writerow({
+                    "Date": p.created_at.isoformat(),
+                    "Payment ID": str(p.id), # Assuming ID matches model field roughly
+                    "Type": p.payment_type,
+                    "Amount": str(p.amount),
+                    "Currency": p.from_currency, # Use from_currency as main currency
+                    "Status": p.status,
+                    "Reference": p.reference_id,
+                    "Description": p.description or ""
+                })
+            content = output.getvalue()
+            output.close()
+
+        else:
+            # Mock PDF as Text
+            filename = f"capp_compliance_{year}.txt"
+            content = f"CAPP WALLET - COMPLIANCE REPORT {year}\n"
+            content += f"User ID: {user_id}\n"
+            content += f"Generated: {datetime.datetime.now()}\n"
+            content += "="*50 + "\n\n"
+            for p in filtered_payments:
+                content += f"Transaction: {p.reference_id}\n"
+                content += f"Date: {p.created_at}\n"
+                content += f"Type: {p.payment_type}\n"
+                content += f"Amount: {p.amount} {p.from_currency}\n"
+                content += f"Status: {p.status}\n"
+                content += "-"*30 + "\n"
+                
+        return {"filename": filename, "content": content} 

@@ -8,12 +8,19 @@ import { api, RoutingResponse, PaymentRoute } from "@/services/api"; // Ensure y
 interface RoutingComparisonWidgetProps {
     amount: number;
     recipient: string;
+    onRouteSelected?: (route: "standard" | "capp") => void;
 }
 
-export function RoutingComparisonWidget({ amount, recipient }: RoutingComparisonWidgetProps) {
+export function RoutingComparisonWidget({ amount, recipient, onRouteSelected }: RoutingComparisonWidgetProps) {
     const [selectedRoute, setSelectedRoute] = useState<"standard" | "capp">("capp");
     const [data, setData] = useState<RoutingResponse | null>(null);
     const [loading, setLoading] = useState(false);
+
+    const handleSelect = (route: "standard" | "capp") => {
+        setSelectedRoute(route);
+        if (onRouteSelected) onRouteSelected(route);
+    };
+
 
     useEffect(() => {
         async function fetchRoutes() {
@@ -52,7 +59,7 @@ export function RoutingComparisonWidget({ amount, recipient }: RoutingComparison
 
             {/* Standard Route Card */}
             <div
-                onClick={() => setSelectedRoute("standard")}
+                onClick={() => handleSelect("standard")}
                 className={clsx(
                     "relative p-6 rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden",
                     selectedRoute === "standard"
@@ -92,7 +99,7 @@ export function RoutingComparisonWidget({ amount, recipient }: RoutingComparison
 
             {/* CAPP Smart Route Card */}
             <div
-                onClick={() => setSelectedRoute("capp")}
+                onClick={() => handleSelect("capp")}
                 className={clsx(
                     "relative p-6 rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden group",
                     selectedRoute === "capp"

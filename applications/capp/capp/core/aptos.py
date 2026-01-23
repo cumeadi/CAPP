@@ -41,27 +41,22 @@ async def init_aptos_client():
         logger.info("Aptos client initialized successfully", node_url=settings.APTOS_NODE_URL)
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         logger.error("Failed to initialize Aptos client", error=str(e))
-    except Exception as e:
-        logger.error("Failed to initialize Aptos client", error=str(e))
-        logger.warning("Falling back to Mock Aptos Client for startup")
-        # Create a "Mock" client by instantiating AptosClient but bypassing the failing logic if possible
-        # Or better, just suppress the error. The AptosClient __init__ fails, so we need a Mock class or similar.
-        # For now, we will suppress so the app starts, but functionality using _aptos_client will fail unless we assign a mock.
-        # Let's assign a Dummy/Mock object if possible, or just let it be None and handle in get_aptos_client.
-        # But get_aptos_client follows strict singleton.
-        
-        # HACK: We will instantiate AptosClient with "demo-private-key" which triggers some logic, 
-        # but the RestClient init inside __init__ is what fails. 
-        # So we need to modify AptosClient class itself or this function to handle it.
-        # Since we can't easily swap the class instance here without changing AptosClient code, 
-        # I will modify the AptosClient class init in the NEXT step. 
-        # For now, let's just NOT raise, and let _aptos_client be None? 
-        # No, that will crash later.
-        
-        # DECISION: I will modify AptosClient.__init__ in the next step. 
-        # Here I will just remove the raise.
-        pass
+        logger.warning("Falling back to Offline/Mock Aptos Client")
+        # Initialize in offline mode (mocking the client availability)
+        try:
+             # Pass generic/empty values to allow instantiation in read-only/offline mode
+             _aptos_client = AptosClient(
+                node_url="https://api.testnet.aptoslabs.com/v1",
+                private_key=None,
+                account_address=None
+             )
+             logger.info("Mock Aptos client initialized successfully")
+        except Exception as inner_e:
+             logger.error("Critical failure initializing even Mock Aptos client", error=str(inner_e))
+             # _aptos_client remains None, app will likely fail on specific endpoints
 
 
 async def close_aptos_client():
@@ -76,8 +71,20 @@ async def close_aptos_client():
 
 def get_aptos_client():
     """Get Aptos client instance"""
+    global _aptos_client
     if not _aptos_client:
-        raise RuntimeError("Aptos client not initialized. Call init_aptos_client() first.")
+        logger.warning("Aptos client not initialized, performing lazy initialization (Mock/Offline)")
+        try:
+             # Lazy init with default/mock values
+             _aptos_client = AptosClient(
+                node_url="https://api.testnet.aptoslabs.com/v1",
+                private_key=None,
+                account_address=None
+             )
+        except Exception as e:
+             logger.error("Lazy initialization failed", error=str(e))
+             raise RuntimeError(f"Aptos client not initialized and lazy init failed: {e}")
+            
     return _aptos_client
 
 

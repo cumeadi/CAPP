@@ -352,6 +352,43 @@ class PaymentService:
         except Exception as e:
             self.logger.error("Failed to get payment", payment_id=payment_id, error=str(e))
             return None
+
+    async def get_user_payments(
+        self,
+        user_id: UUID,
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[str] = None
+    ) -> List[CrossBorderPayment]:
+        """
+        Get payments for a specific user
+
+        Args:
+            user_id: The user ID
+            limit: Maximum number of payments
+            offset: Number of payments to skip
+            status: Optional status filter
+
+        Returns:
+            List[CrossBorderPayment]: List of payments
+        """
+        try:
+            async with AsyncSessionLocal() as session:
+                repo = PaymentRepository(session)
+
+                # Get payments from database
+                db_payments = await repo.get_by_user(user_id, limit, offset, status)
+
+                # Convert SQLAlchemy models to Pydantic models
+                payments = [db_payment_to_crossborder(p) for p in db_payments]
+
+                self.logger.info("User payments retrieved", user_id=user_id, count=len(payments))
+                return payments
+
+        except Exception as e:
+            self.logger.error("Failed to get user payments", user_id=user_id, error=str(e))
+            return []
+
     
     async def cancel_payment(self, payment_id: UUID) -> PaymentResult:
         """

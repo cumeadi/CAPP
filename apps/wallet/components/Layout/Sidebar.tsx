@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Home, Send, QrCode, History, Settings, Layers } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Home, Send, QrCode, History, Settings, Layers, LogOut } from "lucide-react";
 import { clsx } from "clsx";
+import { useDisconnect } from "wagmi";
 
 const NAV_ITEMS = [
     { icon: Home, label: "Home", href: "/" },
@@ -15,6 +16,14 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
     const pathname = usePathname();
+    const router = useRouter();
+    const { disconnect } = useDisconnect();
+
+    const handleSignOut = () => {
+        disconnect();
+        localStorage.removeItem('token');
+        router.push('/');
+    };
 
     return (
         <aside className="w-20 h-screen sticky top-0 border-r border-[var(--border-medium)] bg-[var(--bg-secondary)] flex flex-col items-center py-6 z-20">
@@ -55,6 +64,18 @@ export function Sidebar() {
                     );
                 })}
             </nav>
+
+            <div className="px-2 w-full mt-auto">
+                <button
+                    onClick={handleSignOut}
+                    className="group relative flex items-center justify-center w-12 h-12 rounded-xl transition-all duration-300 mx-auto text-[var(--text-secondary)] hover:text-red-400 hover:bg-[var(--bg-tertiary)] border border-transparent hover:border-red-500/20"
+                >
+                    <LogOut className="w-6 h-6" />
+                    <span className="absolute left-14 bg-[var(--bg-tertiary)] text-red-400 text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity border border-red-500/20 pointer-events-none whitespace-nowrap z-50">
+                        Sign Out
+                    </span>
+                </button>
+            </div>
         </aside>
     );
 }

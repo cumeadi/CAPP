@@ -6,6 +6,7 @@ import asyncio
 from typing import Optional, Any, List
 import json
 import pickle
+import time
 
 import redis.asyncio as redis
 import structlog
@@ -61,8 +62,12 @@ async def close_redis() -> None:
 
 def get_redis_client() -> redis.Redis:
     """Get Redis client"""
+    global _redis_client
     if not _redis_client:
-        raise RuntimeError("Redis not initialized. Call init_redis() first.")
+        # Lazy initialization fallback
+        logger.warning("Redis client not initialized, performing lazy initialization (Mock)")
+        _redis_client = MockRedisClient()
+        
     return _redis_client
 
 
@@ -81,7 +86,7 @@ class MockRedisClient:
         """Mock get"""
         if key in self._data:
             # Check expiry
-            if key in self._expiry and self._expiry[key] < asyncio.get_event_loop().time():
+            if key in self._expiry and self._expiry[key] < time.time():
                 del self._data[key]
                 del self._expiry[key]
                 return None
@@ -92,13 +97,13 @@ class MockRedisClient:
         """Mock set"""
         self._data[key] = value
         if ex:
-            self._expiry[key] = asyncio.get_event_loop().time() + ex
+            self._expiry[key] = time.time() + ex
         return True
     
     async def setex(self, key: str, ex: int, value: str) -> bool:
         """Mock setex"""
         self._data[key] = value
-        self._expiry[key] = asyncio.get_event_loop().time() + ex
+        self._expiry[key] = time.time() + ex
         return True
     
     async def delete(self, key: str) -> int:
@@ -117,14 +122,14 @@ class MockRedisClient:
     async def expire(self, key: str, ttl: int) -> bool:
         """Mock expire"""
         if key in self._data:
-            self._expiry[key] = asyncio.get_event_loop().time() + ttl
+            self._expiry[key] = time.time() + ttl
             return True
         return False
     
     async def ttl(self, key: str) -> int:
         """Mock ttl"""
         if key in self._expiry:
-            remaining = self._expiry[key] - asyncio.get_event_loop().time()
+            remaining = self._expiry[key] - time.time()
             return max(0, int(remaining))
         return -1
     
@@ -217,7 +222,7 @@ class MockRedisClient:
         
         if key in self._data:
             # Check expiry
-            if key in self._expiry and self._expiry[key] < asyncio.get_event_loop().time():
+            if key in self._expiry and self._expiry[key] < time.time():
                 logger.info(f"DEBUG: Key {key} expired.")
                 del self._data[key]
                 del self._expiry[key]

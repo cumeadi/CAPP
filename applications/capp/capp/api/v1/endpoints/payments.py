@@ -4,6 +4,9 @@ Payment endpoints for CAPP API
 
 from typing import List, Optional
 from uuid import UUID
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -141,6 +144,72 @@ async def create_payment(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create payment: {str(e)}"
         )
+
+
+class PaymentHistoryItem(BaseModel):
+    """Model for payment history item"""
+    payment_id: UUID
+    reference_id: str
+    amount: float
+    from_currency: Currency
+    to_currency: Currency
+    status: PaymentStatus
+    payment_type: PaymentType
+    created_at: str
+    transaction_hash: Optional[str] = None
+    sender_name: Optional[str] = None
+    recipient_name: Optional[str] = None
+    description: Optional[str] = None
+
+
+@router.get("/history", response_model=List[PaymentHistoryItem])
+async def get_payment_history(
+    limit: int = 50,
+    offset: int = 0,
+    status: Optional[PaymentStatus] = None,
+    payment_service: PaymentService = Depends(),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get payment history for the current user
+
+    Returns a list of payments sent or received by the user.
+
+    **Authentication required**: Bearer token
+    """
+    try:
+        payments = await payment_service.get_user_payments(
+            user_id=current_user.id,
+            limit=limit,
+            offset=offset,
+            status=status.value if status else None
+        )
+
+        return [
+            PaymentHistoryItem(
+                payment_id=p.payment_id,
+                reference_id=p.reference_id,
+                amount=float(p.amount),
+                from_currency=p.from_currency,
+                to_currency=p.to_currency,
+                status=p.status,
+                payment_type=p.payment_type,
+                created_at=p.created_at.isoformat(),
+                transaction_hash=p.blockchain_tx_hash,
+                sender_name=p.sender.name if p.sender else None,
+                recipient_name=p.recipient.name if p.recipient else None,
+                description=p.description
+            )
+            for p in payments
+        ]
+
+    except Exception as e:
+        logger.error("Failed to fetch payment history", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch payment history"
+        )
+
 
 
 @router.get("/{payment_id}/status", response_model=PaymentStatusResponse)

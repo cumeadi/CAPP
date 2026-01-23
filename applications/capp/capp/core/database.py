@@ -389,9 +389,14 @@ async def get_db() -> AsyncSession:
 async def init_db():
     """Initialize database tables."""
     logger.info("Initializing database tables...")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables initialized successfully")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database tables: {e}")
+        # We don't raise here to allow the app to start even if DB is down/unavailable
+        # Subsequent DB operations will fail, but the API will be up.
 
 
 async def close_db():
