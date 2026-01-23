@@ -100,23 +100,25 @@ export default function SettingsPage() {
                     <h3 className="text-xs font-bold text-[var(--text-tertiary)] uppercase tracking-widest ml-1 mb-2">General</h3>
 
                     {[
-                        { icon: Shield, label: "Security", desc: "Biometrics, PIN, Seed Phrase" },
-                        { icon: Globe, label: "Networks", desc: "Manage operational chains" },
-                        { icon: Smartphone, label: "App Preferences", desc: "Notifications, Currency" },
-                        { icon: Briefcase, label: "Compliance Mode", desc: "Tax reports, Audit logs" },
+                        { icon: Shield, label: "Security", desc: "Biometrics, PIN, Seed Phrase", href: "/settings/security" },
+                        { icon: Globe, label: "Networks", desc: "Manage operational chains", href: "/settings/networks" },
+                        { icon: Smartphone, label: "App Preferences", desc: "Notifications, Currency", href: "/settings/preferences" },
+                        { icon: Briefcase, label: "Compliance Mode", desc: "Tax reports, Audit logs", href: "/settings/compliance" },
                     ].map((item) => (
-                        <div key={item.label} className="p-4 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)] hover:border-[var(--accent-primary)] transition-all flex items-center justify-between group cursor-pointer">
-                            <div className="flex items-center gap-4">
-                                <div className="p-2 rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-secondary)] group-hover:text-white transition-colors">
-                                    <item.icon className="w-5 h-5" />
+                        <Link href={item.href} key={item.label}>
+                            <div className="p-4 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)] hover:border-[var(--accent-primary)] transition-all flex items-center justify-between group cursor-pointer mb-3">
+                                <div className="flex items-center gap-4">
+                                    <div className="p-2 rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-secondary)] group-hover:text-white transition-colors">
+                                        <item.icon className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-white font-bold text-sm">{item.label}</h4>
+                                        <p className="text-xs text-[var(--text-secondary)]">{item.desc}</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h4 className="text-white font-bold text-sm">{item.label}</h4>
-                                    <p className="text-xs text-[var(--text-secondary)]">{item.desc}</p>
-                                </div>
+                                <ChevronRight className="w-5 h-5 text-[var(--text-tertiary)] group-hover:text-white transition-colors" />
                             </div>
-                            <ChevronRight className="w-5 h-5 text-[var(--text-tertiary)] group-hover:text-white transition-colors" />
-                        </div>
+                        </Link>
                     ))}
                 </div>
 

@@ -18,6 +18,10 @@ from .core.validation import RequestValidationMiddleware
 from .core.security_headers import SecurityHeadersMiddleware
 from .core.secrets import validate_all_secrets_on_startup
 from .core.error_handlers import register_error_handlers
+from .core.redis import init_redis, close_redis
+from .core.database import init_db, close_db
+from .core.aptos import init_aptos_client, close_aptos_client
+from .core.polygon import init_polygon_client
 
 # Configure structured logging
 structlog.configure(
@@ -65,9 +69,14 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestValidationMiddleware)
 
 # Add CORS middleware
+origins = settings.ALLOWED_ORIGINS
+# Force add development origins to ensure connectivity
+if True: # Always ensure these are present for now
+    origins.extend(["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,  # Environment-based whitelist
+    allow_origins=list(set(origins)),  # Environment-based whitelist + dev defaults
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["Content-Type", "Authorization", "X-Request-ID", "X-API-Key"],
@@ -81,6 +90,17 @@ app.include_router(api_router, prefix="/api/v1")
 async def startup_event():
     """Application startup event"""
     logger.info("Starting CAPP application...")
+    logger.info(f"Allowed Origins: {settings.ALLOWED_ORIGINS}")
+
+    # Initialize Redis
+    await init_redis()
+
+    # Initialize Database
+    await init_db()
+
+    # Initialize Blockchain Clients
+    await init_aptos_client()
+    await init_polygon_client()
 
     # Validate secrets on startup
     validate_all_secrets_on_startup()
@@ -92,6 +112,15 @@ async def startup_event():
 async def shutdown_event():
     """Application shutdown event"""
     logger.info("Shutting down CAPP application...")
+    
+    # Close Redis
+    await close_redis()
+
+    # Close Database
+    await close_db()
+
+    # Close Blockchain Clients
+    await close_aptos_client()
 
 
 @app.get("/")
@@ -115,6 +144,8 @@ async def health_check():
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler"""
+    import traceback
+    traceback.print_exc()
     logger.error(
         "Unhandled exception",
         error=str(exc),

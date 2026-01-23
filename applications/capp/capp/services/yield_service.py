@@ -35,11 +35,10 @@ class YieldService:
         self.logger = structlog.get_logger(__name__)
         
         # Configuration
-        # In a real app, these would come from settings/DB
-        self.HOT_WALLET_BUFFER_PCT = Decimal("0.20") # Keep 20% liquid
-        self.MIN_SWEEP_AMOUNT = Decimal("1000.00")   # Min amount to bridge/deposit
+        self.HOT_WALLET_BUFFER_PCT = Decimal("0.20") 
+        self.MIN_SWEEP_AMOUNT = Decimal("1000.00")
         
-        # Mock State for "Yield Protocol" balances
+        # Mock State for "Yield Protocol" balances (Aave strategy etc), NOT liquid balances
         # Structure: { "wallet_address": { "USDC": Decimal(...), ... } }
         self._mock_yield_balances = {
             "internal_hot_wallet": {
@@ -47,29 +46,75 @@ class YieldService:
                 "ETH": Decimal("10.0")
             }
         }
+
+    async def _get_real_aptos_balance(self, address: str) -> Decimal:
+        """Fetch real APT balance from Aptos Testnet Node"""
+        try:
+            import aiohttp
+            from urllib.parse import quote
+            node_url = self.settings.APTOS_NODE_URL
+            
+            # Resource for APT CoinStore
+            resource_type = "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>"
+            encoded_resource = quote(resource_type)
+            
+            async with aiohttp.ClientSession() as session:
+                url = f"{node_url}/accounts/{address}/resource/{encoded_resource}"
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        raw_balance = int(data["data"]["coin"]["value"])
+                        # APT has 8 decimals
+                        return Decimal(raw_balance) / Decimal(100_000_000)
+                    elif response.status == 404:
+                        return Decimal("0.0")
+                    else:
+                        self.logger.warning(f"Failed to fetch Aptos balance: {response.status}")
+                        return Decimal("0.0")
+        except Exception as e:
+            self.logger.error(f"Error fetching Aptos balance: {str(e)}")
+            return Decimal("0.0")
     
     async def get_total_treasury_balance(self, wallet_address: str = "internal_hot_wallet") -> Dict[str, Any]:
         """
         Get aggregated treasury balance (Hot + Yield) for a specific wallet.
         """
-        # In a real app, fetch hot wallet balance from RPC/DB for the specific address
-        # For mock purposes, we'll assume different balances based on address to prove multi-tenancy
+        # 1. Fetch REAL Aptos Balance if configured
+        # Uses the configured address in settings.py if available, or a default/passed one
+        target_aptos_addr = self.settings.APTOS_ACCOUNT_ADDRESS
+        
+        real_apt_balance = Decimal("0.0")
+        if target_aptos_addr:
+             real_apt_balance = await self._get_real_aptos_balance(target_aptos_addr)
+        else:
+             # Fallback to mock for demo if no ENV var set
+             if wallet_address == "internal_hot_wallet":
+                 real_apt_balance = Decimal("150.0")
+             else:
+                 real_apt_balance = Decimal("500.0")
+
+        # Mock other balances as before
         if wallet_address == "internal_hot_wallet":
             hot_balance_usdc = Decimal("15000.00")
             hot_balance_eth = Decimal("2.5")
         else:
-            # Simulate an external client wallet
             hot_balance_usdc = Decimal("50000.00")
             hot_balance_eth = Decimal("10.0")
         
-        # Get yield balances for this specific wallet
+        # Get yield balances
         wallet_yield = self._mock_yield_balances.get(wallet_address, {})
         yield_balance_usdc = wallet_yield.get("USDC", Decimal("0"))
         yield_balance_eth = wallet_yield.get("ETH", Decimal("0"))
+        # APT Yield is 0 for now as we don't have a real strategy connected yet
+        yield_balance_apt = Decimal("0")
         
         return {
             "wallet_address": wallet_address,
-            "total_usd_value": float((hot_balance_usdc + yield_balance_usdc) + ((hot_balance_eth + yield_balance_eth) * 2500)),
+            "total_usd_value": float(
+                (hot_balance_usdc + yield_balance_usdc) + 
+                ((hot_balance_eth + yield_balance_eth) * 2500) + 
+                ((real_apt_balance + yield_balance_apt) * 10)
+            ),
             "breakdown": {
                 "USDC": {
                     "hot": float(hot_balance_usdc),
@@ -80,6 +125,11 @@ class YieldService:
                     "hot": float(hot_balance_eth),
                     "yielding": float(yield_balance_eth),
                     "total": float(hot_balance_eth + yield_balance_eth)
+                },
+                "APT": {
+                    "hot": float(real_apt_balance),
+                    "yielding": float(yield_balance_apt),
+                    "total": float(real_apt_balance + yield_balance_apt)
                 }
             }
         }

@@ -7,6 +7,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
     variant?: "primary" | "secondary" | "outline" | "ghost";
     size?: "sm" | "md" | "lg";
     icon?: React.ElementType;
+    isLoading?: boolean;
 }
 
 export function Button({
@@ -15,6 +16,8 @@ export function Button({
     size = "md",
     className,
     icon: Icon,
+    isLoading,
+    disabled,
     ...props
 }: ButtonProps) {
     const variants = {
@@ -38,9 +41,14 @@ export function Button({
                 sizes[size],
                 className
             )}
+            disabled={disabled || isLoading}
             {...props}
         >
-            {Icon && <Icon className="w-4 h-4" />}
+            {isLoading ? (
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+                Icon && <Icon className="w-4 h-4" />
+            )}
             {children}
         </button>
     );

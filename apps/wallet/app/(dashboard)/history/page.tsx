@@ -1,20 +1,55 @@
 "use client";
-
-import { useState } from "react";
-import { ArrowUpRight, ArrowDownLeft, Filter, Search, Download } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ArrowUpRight, ArrowDownLeft, Filter, Search, Download, RefreshCw } from "lucide-react";
 import { Button } from "@/components/Shared/Button";
 import { clsx } from "clsx";
-
-const MOCK_HISTORY = [
-    { id: 1, type: "send", asset: "ETH", amount: "0.1", value: "$280.00", to: "0xAB...CDEF", date: "Today, 10:45 AM", status: "Confirmed", route: "CAPP Optimized" },
-    { id: 2, type: "receive", asset: "USDC", amount: "1,000", value: "$1,000.00", from: "0x12...3456", date: "Today, 09:30 AM", status: "Confirmed", route: "Standard" },
-    { id: 3, type: "swap", asset: "USDC -> CAPP", amount: "500", value: "$500.00", date: "Yesterday", status: "Confirmed", route: "Uniswap" },
-    { id: 4, type: "send", asset: "ETH", amount: "1.5", value: "$4,200.00", to: "0xTreasury", date: "Jan 12, 2026", status: "Confirmed", route: "Standard" },
-    { id: 5, type: "receive", asset: "CAPP", amount: "5,000", value: "$500.00", from: "Staking", date: "Jan 10, 2026", status: "Confirmed", route: "Reward" },
-];
+import { api, PaymentHistoryItem } from "@/services/api";
 
 export default function HistoryPage() {
     const [filter, setFilter] = useState("all");
+    const [history, setHistory] = useState<PaymentHistoryItem[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        loadHistory();
+    }, []);
+
+    const loadHistory = async () => {
+        setLoading(true);
+        try {
+            const data = await api.getHistory();
+            setHistory(data);
+        } catch (e) {
+            console.error("Failed to load history", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const formatDate = (dateStr: string) => {
+        return new Date(dateStr).toLocaleString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric',
+            hour: 'numeric', minute: 'numeric', hour12: true
+        });
+    };
+
+    const getStatusColor = (status: string) => {
+        switch (status.toLowerCase()) {
+            case 'completed': return 'text-[var(--accent-cyan)]';
+            case 'pending':
+            case 'processing': return 'text-orange-400';
+            case 'failed': return 'text-red-500';
+            default: return 'text-[var(--text-secondary)]';
+        }
+    };
+
+    const filteredHistory = history.filter(item => {
+        if (filter === "all") return true;
+        // Simple mapping for now, ideally we check sender_id vs current_user_id
+        // But for this MVP assume all created payments are 'sent' unless type specifies otherwise
+        if (filter === "sent") return true;
+        return false;
+    });
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -24,7 +59,10 @@ export default function HistoryPage() {
                     <h1 className="text-2xl font-bold text-white tracking-widest mb-2">TRANSACTIONS</h1>
                     <p className="text-[var(--text-secondary)] text-sm font-mono">View your past activity.</p>
                 </div>
-                <Button variant="outline" size="sm" icon={Download}>EXPORT CSV</Button>
+                <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={loadHistory} icon={RefreshCw}>REFRESH</Button>
+                    <Button variant="outline" size="sm" icon={Download}>EXPORT CSV</Button>
+                </div>
             </div>
 
             {/* Filters */}
@@ -60,48 +98,56 @@ export default function HistoryPage() {
 
             {/* List */}
             <div className="space-y-4">
-                {MOCK_HISTORY.map((tx) => (
-                    <div key={tx.id} className="p-4 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)] hover:border-[var(--accent-primary)] transition-all group flex items-center justify-between">
+                {loading ? (
+                    <div className="text-center py-10 text-[var(--text-secondary)]">Loading history...</div>
+                ) : filteredHistory.length === 0 ? (
+                    <div className="text-center py-10 text-[var(--text-secondary)]">No transactions found.</div>
+                ) : (
+                    filteredHistory.map((tx) => (
+                        <div key={tx.payment_id} className="p-4 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)] hover:border-[var(--accent-primary)] transition-all group flex items-center justify-between">
 
-                        {/* Left: Icon & Type */}
-                        <div className="flex items-center gap-4">
-                            <div className={clsx(
-                                "w-10 h-10 rounded-full flex items-center justify-center",
-                                tx.type === "send" ? "bg-[var(--bg-tertiary)] text-[var(--accent-secondary)]" :
-                                    tx.type === "receive" ? "bg-[rgba(0,255,179,0.1)] text-[var(--accent-cyan)]" :
-                                        "bg-orange-500/10 text-orange-500"
-                            )}>
-                                {tx.type === "send" ? <ArrowUpRight className="w-5 h-5" /> :
-                                    tx.type === "receive" ? <ArrowDownLeft className="w-5 h-5" /> :
-                                        <div className="font-bold text-xs">SWAP</div>}
-                            </div>
-                            <div>
-                                <h4 className="text-white font-bold text-sm uppercase flex items-center gap-2">
-                                    {tx.type} {tx.asset}
-                                    {tx.route.includes("CAPP") && (
-                                        <span className="text-[10px] bg-[var(--accent-cyan)] text-black px-1.5 rounded font-bold">CAPP ROUTED</span>
+                            {/* Left: Icon & Type */}
+                            <div className="flex items-center gap-4">
+                                <div className={clsx(
+                                    "w-10 h-10 rounded-full flex items-center justify-center",
+                                    "bg-[var(--bg-tertiary)] text-[var(--accent-secondary)]"
+                                    // defaulting to 'send' style for now as we mostly demonstrate sending
+                                )}>
+                                    <ArrowUpRight className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h4 className="text-white font-bold text-sm uppercase flex items-center gap-2">
+                                        SEND {tx.from_currency}
+                                        {/* Optional pill if we had route info, omitting for now or calculating */}
+                                    </h4>
+                                    <p className="text-xs text-[var(--text-secondary)] font-mono mt-0.5">{formatDate(tx.created_at)}</p>
+                                    <p className="text-[10px] text-[var(--text-secondary)]">To: {tx.recipient_name || tx.reference_id}</p>
+                                    {tx.description && (
+                                        <p className="text-[10px] text-[var(--text-tertiary)] italic mt-0.5 max-w-[200px] truncate">"{tx.description}"</p>
                                     )}
-                                </h4>
-                                <p className="text-xs text-[var(--text-secondary)] font-mono mt-0.5">{tx.date}</p>
+                                </div>
                             </div>
-                        </div>
 
-                        {/* Middle: Details */}
-                        <div className="hidden md:block text-right">
-                            <div className="text-xs text-[var(--text-secondary)]">Amount</div>
-                            <div className="text-white font-mono font-bold">{tx.amount} {tx.asset.split(" ")[0]}</div>
-                        </div>
+                            {/* Middle: Details */}
+                            <div className="hidden md:block text-right">
+                                <div className="text-xs text-[var(--text-secondary)]">Amount</div>
+                                <div className="text-white font-mono font-bold">{tx.amount.toFixed(2)} {tx.from_currency}</div>
+                            </div>
 
-                        {/* Right: Value & Status */}
-                        <div className="text-right">
-                            <div className="text-white font-bold">{tx.value}</div>
-                            <div className="text-xs text-[var(--accent-cyan)]">{tx.status}</div>
-                        </div>
+                            {/* Right: Value & Status */}
+                            <div className="text-right">
+                                <div className="text-white font-bold">{tx.amount.toFixed(2)} {tx.from_currency}</div>
+                                <div className={clsx("text-xs font-bold uppercase", getStatusColor(tx.status))}>
+                                    {tx.status}
+                                </div>
+                            </div>
 
-                    </div>
-                ))}
+                        </div>
+                    ))
+                )}
             </div>
 
         </div>
     );
 }
+

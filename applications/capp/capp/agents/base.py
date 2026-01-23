@@ -110,10 +110,17 @@ class BasePaymentAgent(ABC):
         
         # Task management
         self._running_tasks: Dict[str, asyncio.Task] = {}
-        self._task_semaphore = asyncio.Semaphore(config.max_concurrent_tasks)
+        self._task_semaphore = None
         
         # Circuit breaker
         self._failure_count = 0
+
+    @property
+    def task_semaphore(self):
+        """Lazy initialization of semaphore"""
+        if self._task_semaphore is None:
+            self._task_semaphore = asyncio.Semaphore(self.config.max_concurrent_tasks)
+        return self._task_semaphore
         self._last_failure_time: Optional[datetime] = None
         
         self.logger.info(
@@ -218,7 +225,7 @@ class BasePaymentAgent(ABC):
                 error_code="CIRCUIT_BREAKER_OPEN"
             )
         
-        async with self._task_semaphore:
+        async with self.task_semaphore:
             task_id = str(uuid.uuid4())
             self.state.current_tasks += 1
             
