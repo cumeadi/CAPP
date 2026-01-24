@@ -26,9 +26,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
       <body
         className={`${jetbrainsMono.variable} ${syne.variable} font-mono bg-[var(--bg-primary)] text-[var(--text-primary)] antialiased relative`}
+        suppressHydrationWarning
       >
         <div className="background-grid" />
         <SettingsProvider>

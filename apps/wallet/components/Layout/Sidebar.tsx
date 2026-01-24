@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, Send, QrCode, History, Settings, Layers, LogOut } from "lucide-react";
+import { Home, Send, QrCode, ArrowRightLeft, History, User, Settings, Layers, LogOut } from "lucide-react";
 import { clsx } from "clsx";
 import { useDisconnect } from "wagmi";
 
@@ -10,7 +10,9 @@ const NAV_ITEMS = [
     { icon: Home, label: "Home", href: "/" },
     { icon: Send, label: "Send", href: "/send" },
     { icon: QrCode, label: "Receive", href: "/receive" },
+    { icon: ArrowRightLeft, label: "Swap", href: "/swap" },
     { icon: History, label: "History", href: "/history" },
+    { icon: User, label: "Contacts", href: "/contacts" },
     { icon: Settings, label: "Settings", href: "/settings" },
 ];
 
