@@ -14,11 +14,15 @@ A revolutionary AI-powered payment system for African cross-border commerce, fea
 ```bash
 # Backend
 source venv/bin/activate
-python -m uvicorn applications.capp.capp.main:app --reload
+python -m uvicorn apps.api.app.main:app --reload --port 8000
 
-# Frontend (in another terminal)
-cd applications/capp/capp-frontend
-npm start
+# Frontend (Web App) - in another terminal
+cd apps/web
+npm run dev
+
+# Wallet App - in another terminal (optional)
+cd apps/wallet
+npm run dev
 ```
 
 ## 📊 Demo Results
@@ -32,349 +36,149 @@ Our Nigeria → Kenya payment demonstration shows:
 ## 🏗️ Architecture
 
 ### Backend (FastAPI + Python)
-- **Agent-Based Architecture**: 4 autonomous agents coordinate payment flows
-- **Multi-Objective Optimization**: Route optimization based on cost, speed, reliability
-- **Event-Driven**: Apache Kafka for reliable cross-border messaging
-- **Blockchain Integration**: Aptos blockchain for settlement and liquidity
-- **Mobile Money Integration**: USSD, SMS, and API connections to MMO networks
+- **Agent-Based Architecture**: Autonomous agents coordinate payment flows and cross-chain operations.
+- **Intelligent Routing Engine**: Optimizes payment paths based on real-time gas/fees from Aptos, Polygon, and Starknet.
+- **Event-Driven**: Apache Kafka for reliable cross-border messaging (mocked/simulated in dev).
+- **Blockchain Integration**: Real-time integration with Aptos, Polygon, and Starknet.
+- **Yield Service**: Smart Sweep functionality for idle assets.
 
-### Frontend (React + TypeScript)
-- **Professional Landing Page**: Modern fintech aesthetic with animated metrics
-- **Interactive Payment Demo**: Real-time comparison between traditional and CAPP payments
-- **AI Agent Visualization**: Live demonstration of autonomous agents at work
-- **Responsive Design**: Optimized for desktop and mobile devices
+### Frontend (Next.js + TypeScript)
+- **Modern Web Architecture**: Built with Next.js 15+ for server-side rendering and performance.
+- **Dual Applications**:
+  - **Web App (`apps/web`)**: Main platform interface, dashboard, and payment demo.
+  - **Wallet App (`apps/wallet`)**: Personal crypto wallet interface.
+- **Styling**: Tailwind CSS for utility-first design.
+- **Interactive Visuals**: Framer Motion for animations.
 
 ## 🎯 Core Features
 
 ### Autonomous Payment Agents
-1. **Route Optimization Agent**: Finds optimal payment corridors across 42+ African countries
-2. **Liquidity Management Agent**: Manages liquidity pools and reservations
-3. **Settlement Agent**: Handles blockchain settlement operations
-4. **Compliance Agent**: Multi-jurisdiction compliance validation
-5. **Exchange Rate Agent**: Optimizes currency conversions
+1. **Route Optimization Agent**: Finds optimal payment corridors across supported chains.
+2. **Liquidity Management Agent**: Manages liquidity pools and reservations.
+3. **Settlement Agent**: Handles blockchain settlement operations.
+4. **Compliance Agent**: Multi-jurisdiction compliance validation (KYB-as-a-Service).
+5. **Relayer Agent**: Automates cross-chain bridging.
 
 ### Payment Optimization
-- **Real-Time Route Analysis**: Multiple corridor evaluation
-- **Cost Optimization**: Fee minimization across providers
-- **Speed Optimization**: Fastest settlement path selection
-- **Compliance Automation**: KYC/AML, sanctions screening
-- **Multi-Currency Support**: 42+ African currencies
-
-### Professional Demo Interface
-- **Live Payment Simulation**: Interactive demo with real calculations
-- **Before/After Comparison**: Traditional vs CAPP performance metrics
-- **Agent Progress Visualization**: Real-time agent decision animation
-- **Results Analytics**: Cost savings, time improvement, success rates
+- **Smart Sweep**: Automatically routes idle funds to yield-generating protocols.
+- **Real-Time Route Analysis**: Uses live chain data for optimal pathfinding.
+- **Cost Optimization**: Fee minimization across providers.
+- **Compliance Automation**: Automated Travel Rule checks and risk scoring.
 
 ## 🛠️ Technology Stack
 
 ### Backend
-- **FastAPI**: High-performance async web framework
-- **SQLAlchemy**: Async database ORM with PostgreSQL
-- **Alembic**: Database migration management
+- **FastAPI**: Async web framework
+- **SQLAlchemy + Alembic**: Database ORM and migrations
 - **PostgreSQL**: Primary data store
 - **Redis**: Caching and rate limiting
-- **Apache Kafka**: Event streaming (mocked)
-- **Aptos SDK**: Blockchain integration (mocked)
-- **Pydantic**: Data validation and serialization
+- **Aptos SDK / Web3.py / Starknet.py**: Blockchain interaction
 - **Structlog**: Structured logging
-- **Prometheus**: Metrics collection
 
 ### Frontend
-- **React 18**: Modern UI framework
+- **Next.js**: React Framework for Production
 - **TypeScript**: Type-safe development
-- **Tailwind CSS**: Utility-first styling
-- **Framer Motion**: Smooth animations
-- **React Router**: Client-side routing
-- **Lucide React**: Beautiful icons
-- **React CountUp**: Animated counters
+- **Tailwind CSS**: Styling
+- **Framer Motion**: Animations
+- **Lucide React**: Icons
+- **Wagmi / Viem**: Ethereum hooks and utils
+- **Starknet.js**: Starknet interaction
 
 ## 📁 Project Structure
 
 ```
-canza-platform/
-├── applications/                  # Built applications
-│   └── capp/                     # CAPP payment system
-│       ├── capp/                 # Backend Python package
-│       │   ├── agents/           # Autonomous payment agents
-│       │   ├── api/              # FastAPI endpoints
-│       │   ├── core/             # Core services
-│       │   ├── models/           # Data models
-│       │   ├── services/         # Business logic
-│       │   └── config/           # Configuration
-│       ├── capp-frontend/        # React frontend
-│       └── requirements.txt      # Python dependencies
+capp/
+├── apps/                          # Application source code
+│   ├── api/                      # Backend API (FastAPI)
+│   │   ├── app/                  # Application logic
+│   │   └── ...
+│   ├── web/                      # Main Frontend (Next.js)
+│   │   ├── app/                  # App Router pages
+│   │   └── ...
+│   └── wallet/                   # Wallet Application (Next.js)
+│       └── ...
 ├── packages/                      # Shared packages
-│   ├── core/                     # Core orchestration
-│   └── integrations/             # Payment integrations
-├── sdk/                          # Canza Agent Framework
-├── examples/                     # Usage examples
-├── docs/                         # Documentation
-├── tests/                        # Test suite
-└── scripts/                      # Development scripts
-│   ├── api/                      # FastAPI endpoints
-│   ├── core/                     # Core services (DB, Redis, etc.)
-│   ├── models/                   # Pydantic data models
-│   ├── services/                 # Business logic services
-│   └── scripts/                  # Demo and utility scripts
-├── capp-frontend/                # React frontend application
-│   ├── src/
-│   │   ├── components/           # React components
-│   │   │   ├── LandingPage.tsx  # Main landing page
-│   │   │   └── PaymentDemo.tsx  # Interactive demo
-│   │   ├── services/            # API integration
-│   │   └── App.tsx              # Main app component
-│   └── public/                  # Static assets
-├── requirements.txt              # Python dependencies
-├── docker-compose.yml           # Docker orchestration
-├── start-capp.sh               # One-command startup script
-└── README.md                   # This file
+│   ├── core/                     # Core business logic
+│   └── integrations/             # External service wrappers
+├── scripts/                       # DevOps and maintenance scripts
+├── docker-compose.yml            # Container orchestration
+├── start-capp.sh                 # Startup helper
+└── README.md                     # This file
 ```
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Python 3.8+
-- PostgreSQL 13+
-- Node.js 16+
-- npm or yarn
-- Git
-- Redis (optional, for caching and rate limiting)
+- Python 3.10+
+- Node.js 18+
+- PostgreSQL 14+
+- Redis (optional but recommended)
 
 ### Backend Setup
 ```bash
-# Clone repository
-git clone <repository-url>
-cd CAPP
-
 # Create virtual environment
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 
 # Install dependencies
-pip install -r applications/capp/requirements.txt
+pip install -r apps/api/requirements.txt (or root requirements.txt if using monorepo style)
 
 # Set up environment variables
 cp .env.example .env
-# Edit .env with your database credentials
 
-# Run database migrations
+# Run migrations
 alembic upgrade head
 
 # Run backend
-python -m uvicorn applications.capp.capp.main:app --reload
+python -m uvicorn apps.api.app.main:app --reload
 ```
 
 ### Frontend Setup
 ```bash
-# Navigate to frontend directory
-cd applications/capp/capp-frontend
+# Navigate to web app
+cd apps/web
 
 # Install dependencies
 npm install
 
 # Start development server
-npm start
+npm run dev
 ```
-
-### Demo Scripts
-```bash
-# Run end-to-end payment demo
-python -m applications.capp.capp.scripts.demo_payment_flow
-
-# Run basic functionality tests
-python tests/test_capp.py
-```
-
-### Database Migrations
-
-CAPP uses Alembic for database schema management:
-
-```bash
-# Check current migration status
-alembic current
-
-# Create a new migration
-./scripts/create_migration.sh "description of changes"
-
-# Apply all pending migrations
-alembic upgrade head
-
-# Rollback one migration
-alembic downgrade -1
-
-# View migration history
-alembic history
-
-# Test migrations (upgrade, downgrade, re-upgrade)
-./scripts/test_migration.sh
-```
-
-For detailed migration documentation, see [docs/MIGRATIONS.md](docs/MIGRATIONS.md).
 
 ## 🌐 API Endpoints
 
 ### Payment Operations
 - `POST /api/v1/payments/send` - Send payment
-- `GET /api/v1/payments/{id}/status` - Get payment status
-- `GET /api/v1/payments/routes` - Get available routes
-- `GET /api/v1/payments/rates` - Get exchange rates
+- `GET /api/v1/routing/analyze` - Analyze routes
+- `GET /api/v1/wallet/balance` - Get real-time balances
 
 ### Health & Monitoring
 - `GET /health` - Health check
 - `GET /metrics` - Prometheus metrics
 - `GET /docs` - Interactive API documentation
 
-## 🎨 Frontend Features
-
-### Landing Page
-- **Hero Section**: Compelling headline with animated metrics
-- **Trust Indicators**: "Powered by Aptos Blockchain", "Built for African Markets"
-- **Metrics Display**: Real-time animated counters
-- **Before/After Comparison**: Traditional vs CAPP methods
-- **Professional Navigation**: Demo, How It Works, Results, About
-
-### Interactive Demo
-- **Two-Panel Layout**: Side-by-side payment comparison
-- **Real-Time Animation**: AI agents processing visualization
-- **Results Analytics**: Cost savings, time improvement, transaction details
-- **API Integration**: Real backend calls with mock fallback
-
-## 🔧 Configuration
-
-### Environment Variables
-Create a `.env` file in the root directory:
-
-```env
-# Backend Configuration
-SECRET_KEY=your-secret-key
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost/capp
-REDIS_URL=redis://localhost:6379
-APTOS_PRIVATE_KEY=your-aptos-private-key
-APTOS_ACCOUNT_ADDRESS=your-aptos-address
-
-# Frontend Configuration
-REACT_APP_API_URL=http://localhost:8000
-```
-
-### Docker Deployment
-```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
-```
-
-## 📊 Performance Metrics
-
-### Demo Results (Nigeria → Kenya)
-- **Processing Cost**: 0.8% (vs 8.9% traditional)
-- **Settlement Time**: 1.5 seconds (vs 3 days)
-- **Success Rate**: 99.9% (vs 85%)
-- **Manual Steps**: 0 (vs 12+)
-
-### System Performance
-- **Concurrent Payments**: 1000+ per second
-- **Route Optimization**: <100ms response time
-- **Agent Coordination**: Real-time consensus building
-- **Error Recovery**: Automatic retry with exponential backoff
-
-## 🧪 Testing
-
-### Backend Tests
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=capp --cov-report=html
-
-# Run specific test file
-pytest test_capp.py
-```
-
-### Frontend Tests
-```bash
-cd capp-frontend
-npm test
-```
-
-## 🚀 Deployment
-
-### Production Backend
-```bash
-# Build Docker image
-docker build -t capp-backend .
-
-# Run with production settings
-docker run -p 8000:8000 capp-backend
-```
-
-### Production Frontend
-```bash
-cd capp-frontend
-npm run build
-
-# Deploy build/ folder to your hosting service
-# - Vercel: Connect GitHub repository
-# - Netlify: Drag and drop build folder
-# - AWS S3: Upload build folder
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is part of the CAPP (Canza Autonomous Payment Protocol) system.
-
-## 🆘 Support
-
-For support and questions:
-- Check the [API Documentation](http://localhost:8000/docs) when running locally
-- Review the demo scripts for usage examples
-- Open an issue on GitHub
-
-## 🎯 Roadmap
+## 🎯 Roadmap & Status
 
 ### Phase 1: Security Hardening ✅
-- [x] CORS configuration
-- [x] JWT authentication
-- [x] Rate limiting
-- [x] Input validation
-- [x] Security headers
-- [x] Secrets management
+- [x] CORS, JWT, Rate Limiting, Input Validation
 
-### Phase 2: Core Implementation (In Progress)
-- [x] Database layer implementation with PostgreSQL
-- [x] Alembic migrations setup
-- [x] User authentication repository
-- [x] Payment repository
-- [ ] Payment service database integration
-- [ ] Error handling framework
-- [ ] Health check system
+### Phase 2: Core Implementation ✅
+- [x] Database layer & Migrations
+- [x] User & Payment Repositories
+- [x] Basic Agent Architecture
 
-### Phase 3: Production Readiness
-- [ ] MMO integration framework
-- [ ] Analytics service
-- [ ] Production deployment
-- [ ] Performance optimization
+### Phase 3: Real Wallets & Integration (Current)
+- [x] Aptos Real Balance Integration
+- [x] Intelligent Routing Engine (Gas estimation)
+- [x] Yield Service (Smart Sweep)
+- [x] Relayer Agents (Cross-chain)
+- [ ] Full Mainnet Settlement
 
-### Phase 4: Advanced Features
-- [ ] Machine learning route optimization
-- [ ] Real-time fraud detection
-- [ ] Advanced compliance automation
-- [ ] Multi-language support
-- [ ] Mobile SDK
+### Phase 4: Production Polish
+- [ ] System Health Monitoring
+- [ ] Advanced Error Handling
+- [ ] Analytics Service
+- [ ] Production Deployment (Docker/K8s)
 
 ---
 
