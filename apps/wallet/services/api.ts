@@ -30,6 +30,7 @@ export interface CreatePaymentRequest {
     recipient_id?: string;
     wallet_address?: string;
     metadata?: Record<string, any>;
+    [key: string]: any;
 }
 
 export const api = {
@@ -122,8 +123,60 @@ export const api = {
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
+    },
+
+    // Identity / Contacts
+    getContacts: async (): Promise<Contact[]> => {
+        const res = await fetch(`${API_BASE}/identity/contacts`);
+        if (!res.ok) return [];
+        return res.json();
+    },
+
+    addContact: async (contact: Omit<Contact, 'id'>): Promise<Contact> => {
+        const res = await fetch(`${API_BASE}/identity/contacts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(contact)
+        });
+        if (!res.ok) throw new Error("Failed to add contact");
+        return res.json();
+    },
+
+    deleteContact: async (id: number): Promise<void> => {
+        const res = await fetch(`${API_BASE}/identity/contacts/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error("Failed to delete contact");
+    },
+
+    // Compliance
+    checkCompliance: async (data: ComplianceCheckRequest): Promise<ComplianceCheckResponse> => {
+        const res = await fetch(`${API_BASE}/compliance/check`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error("Compliance check failed");
+        return res.json();
     }
 };
+
+export interface ComplianceCheckRequest {
+    sender_name: string;
+    sender_country: string;
+    sender_address?: string;
+    recipient_name: string;
+    recipient_country: string;
+    recipient_address?: string;
+    amount: number;
+    currency: string;
+    payment_method: string;
+}
+
+export interface ComplianceCheckResponse {
+    is_compliant: boolean;
+    risk_score: number;
+    reasoning: string;
+    violations: string[];
+}
 
 export interface PaymentHistoryItem {
     payment_id: string;
@@ -166,3 +219,11 @@ export const agentApi = {
         return res.json();
     }
 };
+
+export interface Contact {
+    id: number;
+    name: string;
+    address: string;
+    network: string;
+    user_id?: number;
+}

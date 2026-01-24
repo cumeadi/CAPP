@@ -12,6 +12,18 @@ class User(Base):
     is_active = Column(Boolean, default=True)
 
     wallet = relationship("Wallet", back_populates="owner", uselist=False)
+    contacts = relationship("Contact", back_populates="user")
+
+class Contact(Base):
+    __tablename__ = "contacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String)
+    address = Column(String)
+    network = Column(String)
+    user_id = Column(Integer, ForeignKey("users.id"))
+
+    user = relationship("User", back_populates="contacts")
 
 class Wallet(Base):
     __tablename__ = "wallets"

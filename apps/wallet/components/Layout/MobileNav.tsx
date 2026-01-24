@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Send, QrCode, History, Settings } from "lucide-react";
+import { Home, Send, QrCode, ArrowRightLeft, History, User, Settings } from "lucide-react";
 import { clsx } from "clsx";
 
 const NAV_ITEMS = [
     { icon: Home, label: "Home", href: "/" },
     { icon: Send, label: "Send", href: "/send" },
     { icon: QrCode, label: "Receive", href: "/receive" },
-    { icon: History, label: "History", href: "/history" },
-    { icon: Settings, label: "Settings", href: "/settings" },
+    { icon: ArrowRightLeft, label: "Swap", href: "/swap" },
+    { icon: User, label: "Contacts", href: "/contacts" },
 ];
 
 export function MobileNav() {

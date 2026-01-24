@@ -132,3 +132,19 @@ class ChatResponse(BaseModel):
 
 class SignedApprovalRequest(BaseModel):
     signature: str
+
+# Identity/Contact Schemas
+class ContactBase(BaseModel):
+    name: str
+    address: str
+    network: str = "Aptos"
+
+class ContactCreate(ContactBase):
+    pass
+
+class ContactResponse(ContactBase):
+    id: int
+    user_id: Optional[int] = None
+    
+    class Config:
+        from_attributes = True
