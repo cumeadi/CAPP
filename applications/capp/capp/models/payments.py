@@ -321,12 +321,10 @@ class CrossBorderPayment(BaseModel):
     expires_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     
-    # Fees and costs
-    fees: condecimal(max_digits=10, decimal_places=2) = Decimal('0.00')
-    total_cost: condecimal(max_digits=10, decimal_places=2) = Decimal('0.00')
-    
-    # Processing
+    # Processing & Audit Trail
     agent_id: Optional[str] = None
+    principal_id: Optional[UUID] = None
+    initiated_by: str = Field(default="human", description="'human' or 'agent'")
     workflow_id: Optional[str] = None
     blockchain_tx_hash: Optional[str] = None
     

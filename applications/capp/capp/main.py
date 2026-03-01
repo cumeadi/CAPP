@@ -7,15 +7,17 @@ middleware, routes, and startup/shutdown events.
 
 import structlog
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
+from typing import Optional
 
 from .config.settings import settings
 from .api.v1.router import api_router
 from .core.rate_limit import limiter, rate_limit_exceeded_handler
 from .core.validation import RequestValidationMiddleware
 from .core.security_headers import SecurityHeadersMiddleware
+from .core.agent_auth_middleware import AgentAuthMiddleware
 from .core.secrets import validate_all_secrets_on_startup
 from .core.error_handlers import register_error_handlers
 from .core.redis import init_redis, close_redis
@@ -81,6 +83,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["Content-Type", "Authorization", "X-Request-ID", "X-API-Key"],
 )
+
+# Add Agent Auth Middleware
+app.add_middleware(AgentAuthMiddleware)
 
 # Include API routes
 app.include_router(api_router, prefix="/api/v1")

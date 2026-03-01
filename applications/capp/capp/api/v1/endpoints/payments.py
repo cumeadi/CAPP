@@ -83,7 +83,8 @@ class PaymentStatusResponse(BaseModel):
 async def create_payment(
     request: CreatePaymentRequest,
     payment_service: PaymentService = Depends(),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    fastapi_request: Request = Depends() # Added fastapi_request
 ):
     """
     Create a new cross-border payment
@@ -94,6 +95,44 @@ async def create_payment(
     **Authentication required**: Bearer token
     """
     try:
+        # Check if the request is agent-initiated from context
+        is_agent = getattr(fastapi_request.state, "is_agent", False)
+        agent_id = None
+        principal_id = None
+        initiated_by = "human"
+        
+        if is_agent:
+            agent_cred = getattr(fastapi_request.state, "agent_cred", None)
+            if agent_cred:
+                agent_id = agent_cred.agent_id
+                principal_id = agent_cred.principal_id
+                initiated_by = "agent"
+                
+        # Prepare payment model
+        # Convert request models to domain models
+        payment_data = request.dict()
+        payment_data["agent_id"] = agent_id
+        payment_data["principal_id"] = principal_id
+        payment_data["initiated_by"] = initiated_by
+        payment_data["sender"] = {
+            "name": request.sender_name,
+            "phone_number": request.sender_phone,
+            "country": request.sender_country
+        }
+        payment_data["recipient"] = {
+            "name": request.recipient_name,
+            "phone_number": request.recipient_phone,
+            "country": request.recipient_country
+        }
+        payment_data["preferences"] = {
+            "prioritize_cost": request.priority_cost,
+            "prioritize_speed": request.priority_speed,
+            "max_delivery_time": request.max_delivery_time,
+            "max_fees": request.max_fees
+        }
+        
+        # --- End Phase 2 Authentication Tracer Injection ---
+        
         # Create payment object
         payment = CrossBorderPayment(
             reference_id=request.reference_id,
@@ -118,7 +157,10 @@ async def create_payment(
                 "prioritize_speed": request.priority_speed,
                 "max_delivery_time": request.max_delivery_time,
                 "max_fees": request.max_fees
-            }
+            },
+            agent_id=agent_id,
+            principal_id=principal_id,
+            initiated_by=initiated_by
         )
         
         # Process payment

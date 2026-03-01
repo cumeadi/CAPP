@@ -830,21 +830,24 @@ class ComplianceAgent(BasePaymentAgent):
         else:
             return "low"
     
-    async def _log_violation(self, payment: CrossBorderPayment, compliance_result: ComplianceResult):
+    async def _log_violation(self, payment: CrossBorderPayment, result: ComplianceResult):
         """Log compliance violation"""
-        violation = {
-            "payment_id": str(payment.payment_id),
+        violation_entry = {
             "timestamp": datetime.now(timezone.utc),
+            "payment_id": str(payment.payment_id),
             "amount": float(payment.amount),
             "from_country": payment.sender.country,
             "to_country": payment.recipient.country,
-            "risk_score": compliance_result.overall_risk_score,
-            "risk_level": compliance_result.risk_level,
-            "violations": compliance_result.violations,
-            "required_actions": compliance_result.required_actions
+            "risk_score": result.overall_risk_score,
+            "risk_level": result.risk_level,
+            "violations": result.violations,
+            "required_actions": result.required_actions,
+            "initiated_by": payment.initiated_by,
+            "agent_id": payment.agent_id,
+            "principal_id": str(payment.principal_id) if payment.principal_id else None
         }
         
-        self.violations_log.append(violation)
+        self.violations_log.append(violation_entry)
         
         # Store in cache for reporting
         await self.cache.set(

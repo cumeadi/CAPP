@@ -4,7 +4,7 @@ Main API router for CAPP v1
 
 from fastapi import APIRouter
 
-from .endpoints import payments, auth, health, oracle, wallet, compliance
+from .endpoints import payments, auth, health, oracle, wallet, compliance, liquidity, policy, agents
 
 api_router = APIRouter()
 
@@ -42,5 +42,23 @@ api_router.include_router(
     tags=["compliance"]
 )
 
+# Include Liquidity endpoints
+api_router.include_router(
+    liquidity.router,
+    prefix="/corridors",
+    tags=["liquidity"]
+)
 
- 
+# Include Policy endpoints
+api_router.include_router(
+    policy.router,
+    prefix="/policy",
+    tags=["policy"]
+)
+
+# Include Agent Credential endpoints
+api_router.include_router(
+    agents.router,
+    prefix="/agents",
+    tags=["agents"]
+)
