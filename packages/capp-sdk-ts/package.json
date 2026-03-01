@@ -1,0 +1,36 @@
+{
+    "name": "@canza/capp-sdk",
+    "version": "0.1.0",
+    "description": "TypeScript SDK for the CAPP Network",
+    "main": "dist/index.js",
+    "module": "dist/index.mjs",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/index.mjs",
+            "require": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "scripts": {
+        "build": "tsup src/index.ts --format cjs,esm --dts",
+        "test": "jest"
+    },
+    "keywords": [
+        "capp",
+        "canza",
+        "payments",
+        "web3",
+        "sdk"
+    ],
+    "author": "Canza Foundation",
+    "license": "MIT",
+    "devDependencies": {
+        "tsup": "^8.0.1",
+        "typescript": "^5.3.3",
+        "@types/node": "^20.10.0"
+    },
+    "files": [
+        "dist"
+    ]
+}

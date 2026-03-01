@@ -16,7 +16,7 @@ from applications.capp.capp.core.polygon import init_polygon_client
 from applications.capp.capp.services.chain_listener import ChainListenerService
 
 from .database import engine, Base
-from .routers import wallet, agents, chain_data, bridge, starknet, routing, system, admin_dlq, identity, compliance
+from .routers import wallet, agents, chain_data, bridge, starknet, routing, system, admin_dlq, identity, compliance, sandbox
 
 logger = structlog.get_logger(__name__)
 
@@ -83,6 +83,7 @@ app.include_router(system.router)
 app.include_router(admin_dlq.router)
 app.include_router(identity.router)
 app.include_router(compliance.router)
+app.include_router(sandbox.router)
 
 @app.get("/")
 async def root():
