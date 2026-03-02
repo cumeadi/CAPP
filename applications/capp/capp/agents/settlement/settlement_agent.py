@@ -19,6 +19,8 @@ from applications.capp.capp.models.payments import (
 )
 from applications.capp.capp.core.aptos import get_aptos_client, AptosSettlementService
 from applications.capp.capp.core.polygon import PolygonSettlementService
+from applications.capp.capp.core.solana import get_solana_client
+from applications.capp.capp.core.stellar import get_stellar_client
 from applications.capp.capp.core.redis import get_cache
 from applications.capp.capp.config.settings import get_settings
 
@@ -59,9 +61,12 @@ class SettlementAgent(BasePaymentAgent):
         self.polygon_service = PolygonSettlementService()
         
         # Service Registry
+        # For simplicity in this mock, the agent stores references to the bridge services
         self.services = {
             "APTOS": self.aptos_service,
-            "POLYGON": self.polygon_service
+            "POLYGON": self.polygon_service,
+            "SOLANA": get_solana_client(),
+            "STELLAR": get_stellar_client()
         }
         
         # Batch management
@@ -260,15 +265,22 @@ class SettlementAgent(BasePaymentAgent):
             # Determine Chain Service
             if batch.to_currency == "APT":
                 service = self.services["APTOS"]
+                tx_hash = await service.submit_settlement_batch(settlement_data)
+                confirmed = await service.wait_for_confirmation(tx_hash)
+            elif batch.to_currency == "SOL":
+                service = self.services["SOLANA"]
+                # Mock batch mapping to single transfer for sandbox
+                tx_hash = await service.execute_transfer(batch.payments[0].recipient.address, float(batch.total_amount))
+                confirmed = True
+            elif batch.to_currency == "XLM":
+                service = self.services["STELLAR"]
+                tx_hash = await service.execute_payment(batch.payments[0].recipient.address, float(batch.total_amount))
+                confirmed = True
             else:
                 # Default to Polygon for MATIC, USDC, etc.
                 service = self.services["POLYGON"]
-
-            # Submit to blockchain
-            tx_hash = await service.submit_settlement_batch(settlement_data)
-            
-            # Wait for transaction confirmation
-            confirmed = await service.wait_for_confirmation(tx_hash)
+                tx_hash = await service.submit_settlement_batch(settlement_data)
+                confirmed = await service.wait_for_confirmation(tx_hash)
             
             if not confirmed:
                 raise Exception("Transaction confirmation timeout")
@@ -325,13 +337,21 @@ class SettlementAgent(BasePaymentAgent):
                 if batch.transaction_hash == tx_hash:
                     if batch.to_currency == "APT":
                         chain_service = self.services["APTOS"]
+                    elif batch.to_currency == "SOL":
+                        chain_service = self.services["SOLANA"]
+                    elif batch.to_currency == "XLM":
+                        chain_service = self.services["STELLAR"]
                     else:
                         chain_service = self.services["POLYGON"]
                     break
             
             # 2. If found, verify on that chain
             if chain_service:
-                status = await chain_service.get_transaction_status(tx_hash)
+                if hasattr(chain_service, 'get_transaction_status'):
+                    status = await chain_service.get_transaction_status(tx_hash)
+                else:
+                    # Mock services (SOL/XLM) are assumed instant currently
+                    status = "success"
             else:
                 # 3. Fallback: Try Polygon first (more likely), then Aptos
                 # Note: This is an optimization; ideally we always know the chain.

@@ -1,13 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, Shield, Smartphone, Globe, Briefcase, ChevronRight, Zap } from "lucide-react";
+import { Briefcase, ChevronRight, Globe, Shield, Smartphone, Zap, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { clsx } from "clsx";
+import { api } from "@/services/api";
+import { useAccount } from "wagmi";
 
 export default function SettingsPage() {
     const [smartSweepEnabled, setSmartSweepEnabled] = useState(false);
     const [loading, setLoading] = useState(false);
+    const { address } = useAccount();
 
     // Load initial config
     /* 
@@ -24,9 +27,13 @@ export default function SettingsPage() {
         setSmartSweepEnabled(newState); // Optimistic
 
         try {
-            // await agentApi.updateAgentConfig({ ...currentConfig, notifications_enabled: newState });
-            // Mocking the API delay for now since backend might not have the full schema yet
-            await new Promise(r => setTimeout(r, 800));
+            if (newState) {
+                // If turned on, dynamically trigger the Yield Optimization Agent hook
+                await api.optimizeYield(address || "internal_hot_wallet", 500, 0.10);
+            } else {
+                // Turning off doesn't require an action in this demo, just state update
+                await new Promise(r => setTimeout(r, 400));
+            }
 
         } catch (error) {
             console.error("Failed to update settings", error);

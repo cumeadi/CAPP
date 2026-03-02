@@ -4,6 +4,10 @@ import { WalletModule } from './modules/wallet';
 import { CorridorsModule } from './modules/corridors';
 import { AgentsModule } from './modules/agents';
 import { ApprovalsModule } from './modules/approvals';
+import { EventsModule } from './modules/events';
+import { ComplianceModule } from './modules/compliance';
+import { YieldModule } from './modules/yield';
+import { handleApiError } from './utils';
 
 export interface CAPPClientOptions {
     apiKey: string;
@@ -21,6 +25,9 @@ export class CAPPClient {
     public corridors: CorridorsModule;
     public agents: AgentsModule;
     public approvals: ApprovalsModule;
+    public events: EventsModule;
+    public compliance: ComplianceModule;
+    public yield: YieldModule;
 
     constructor(options: CAPPClientOptions) {
         this.apiKey = options.apiKey;
@@ -42,6 +49,9 @@ export class CAPPClient {
         this.corridors = new CorridorsModule(this);
         this.agents = new AgentsModule(this);
         this.approvals = new ApprovalsModule(this);
+        this.events = new EventsModule(this);
+        this.compliance = new ComplianceModule(this);
+        this.yield = new YieldModule(this);
     }
 
     public async fetch(path: string, options: RequestInit = {}): Promise<Response> {
@@ -62,5 +72,19 @@ export class CAPPClient {
         };
 
         return fetch(`${this.baseUrl}${path}`, finalOptions);
+    }
+
+    public async sandboxFaucet(asset: string, amount: number): Promise<{ tx_hash: string; new_balance: number; message: string }> {
+        if (!this.sandbox) {
+            throw new Error("Faucet is only available in Sandbox mode (sandbox=true).");
+        }
+
+        const res = await this.fetch('/sandbox/faucet', {
+            method: 'POST',
+            body: JSON.stringify({ asset, amount })
+        });
+
+        await handleApiError(res);
+        return res.json();
     }
 }

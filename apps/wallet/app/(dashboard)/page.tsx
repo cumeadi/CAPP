@@ -92,7 +92,10 @@ export default function DashboardPage() {
   const displayAptosBalance = isAptosConnected ? aptosBalance : (yieldStats?.aptos_balance || 0);
   const aptosValue = displayAptosBalance * 10; // Mock APT price $10
 
-  const totalValue = ethValue + usdcValue + aptosValue;
+  const solanaValue = (yieldStats?.solana_balance || 0) * 150; // Mock SOL price $150
+  const stellarValue = (yieldStats?.stellar_balance || 0) * 0.12; // Mock XLM price $0.12
+
+  const totalValue = ethValue + usdcValue + aptosValue + solanaValue + stellarValue;
 
   return (
     <div className="space-y-12 animate-in fade-in duration-500">
@@ -283,6 +286,22 @@ export default function DashboardPage() {
               value={`$${(displayAptosBalance * 10).toLocaleString()}`}
               change={-2.5}
               icon={<div className="text-teal-400">A</div>}
+            />
+
+            <AssetCard
+              symbol="SOL"
+              balance={`${(yieldStats?.solana_balance || 0).toLocaleString()} SOL`}
+              value={`$${solanaValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              change={5.4}
+              icon={<div className="text-green-400">S</div>}
+            />
+
+            <AssetCard
+              symbol="XLM"
+              balance={`${(yieldStats?.stellar_balance || 0).toLocaleString()} XLM`}
+              value={`$${stellarValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              change={1.1}
+              icon={<div className="text-blue-300">X</div>}
             />
           </div>
         </div>

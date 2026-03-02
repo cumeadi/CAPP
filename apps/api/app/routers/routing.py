@@ -66,6 +66,13 @@ async def calculate_route(routing_req: schemas.RoutingRequest, request: Request)
         # Map DTOs to Schema
         api_routes = []
         best_route = None
+        # Predictive Routing Hooks
+        from app.services.corridor_forecasting import corridor_forecaster
+        # We assume the corridor is typically {Currency}-{Recipient_Country_or_Currency}
+        # For MVP we mock the corridor name from the request logic
+        route_corridor = f"{routing_req.currency}-DEST"
+        prediction = await corridor_forecaster.predict_corridor_confidence(route_corridor)
+        ai_confidence = prediction.get("confidence_score", 0.5)
         
         for q in quotes:
             try:
@@ -74,7 +81,8 @@ async def calculate_route(routing_req: schemas.RoutingRequest, request: Request)
                     fee_usd=q["fee"],
                     eta_seconds=int(q["estimated_time_minutes"] * 60),
                     recommendation_score=q["score"],
-                    reason=f"Fee: {q['fee']}, Time: {q['estimated_time_minutes']}m",
+                    confidence_score=ai_confidence,
+                    reason=f"Fee: {q['fee']}, Time: {q['estimated_time_minutes']}m | AI Confidence: {ai_confidence}",
                     estimated_gas_token=0.0 # Mock
                 )
                 api_routes.append(route_model)

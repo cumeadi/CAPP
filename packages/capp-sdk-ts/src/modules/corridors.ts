@@ -1,5 +1,5 @@
 import { CAPPClient } from '../client';
-import { CorridorStatus, CorridorEvent } from '../models';
+import { CorridorStatus, CorridorEvent, CorridorFeedResponse } from '../models';
 import { handleApiError } from '../utils';
 
 export class CorridorsModule {
@@ -7,6 +7,12 @@ export class CorridorsModule {
 
     public async status(corridor: string): Promise<CorridorStatus> {
         const res = await this.client.fetch(`/corridors/${corridor}/status`);
+        await handleApiError(res);
+        return res.json();
+    }
+
+    public async getFeed(corridor: string, lookbackDays: number = 7): Promise<CorridorFeedResponse> {
+        const res = await this.client.fetch(`/corridors/feed?corridor=${encodeURIComponent(corridor)}&lookback_days=${lookbackDays}`);
         await handleApiError(res);
         return res.json();
     }

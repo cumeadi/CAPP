@@ -14,7 +14,9 @@ from applications.capp.capp.models.payments import Chain
 class AgentCredentialBase(BaseModel):
     """Base model for agent credentials"""
     agent_id: str = Field(description="Unique identifier for the agent instance")
-    principal_id: UUID = Field(description="Human user UUID this agent acts on behalf of")
+    organization_id: UUID = Field(description="Organization UUID this agent belongs to")
+    principal_id: Optional[UUID] = Field(None, description="Human user UUID this agent acts on behalf of (if personal)")
+    parent_agent_id: Optional[str] = Field(None, description="If this is a sub-agent, the ID of the delegating agent")
     
     # Spending policies
     max_per_tx_usd: Optional[float] = Field(None, description="Maximum allowed amount per transaction in USD")

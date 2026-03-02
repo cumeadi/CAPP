@@ -62,3 +62,49 @@ class AgentChatLog(Base):
     user_query = Column(String)
     agent_response = Column(String)
 
+class WebhookSubscription(Base):
+    __tablename__ = "webhook_subscriptions"
+
+    id = Column(String, primary_key=True, index=True) # sub_abc123
+    agent_id = Column(String, index=True)
+    event_type = Column(String, index=True)
+    corridor = Column(String, index=True)
+    threshold = Column(String) # JSON string
+    webhook_url = Column(String)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class CorridorMetricsHistory(Base):
+    __tablename__ = "corridor_metrics_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    corridor = Column(String, index=True) # e.g. "USDC-NGN"
+    liquidity_depth = Column(Float)
+    avg_fee_pct = Column(Float)
+    success_rate = Column(Float)
+    tx_volume_usd = Column(Float)
+
+class AnomalyEvent(Base):
+    __tablename__ = "anomaly_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    agent_id = Column(String, index=True)
+    severity = Column(String) # LOW, MEDIUM, HIGH, CRITICAL
+    rule_triggered = Column(String) # e.g. "VELOCITY_SPIKE", "CORRIDOR_ABUSE"
+    details = Column(String) # JSON string
+    resolved = Column(Boolean, default=False)
+
+class PaymentMemoryRecord(Base):
+    __tablename__ = "payment_memory"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    tx_hash = Column(String, index=True)
+    corridor = Column(String, index=True) # e.g. "USD-KES"
+    target_chain = Column(String)
+    amount_usd = Column(Float)
+    execution_time_ms = Column(Integer)
+    success = Column(Boolean)
+    error_reason = Column(String, nullable=True)

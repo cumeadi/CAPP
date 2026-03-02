@@ -25,6 +25,30 @@ class AgentsModule:
         handle_api_error(res)
         return AgentCredential(**res.json())
 
+    async def delegate(
+        self,
+        parent_agent_id: str,
+        corridor_allowlist: List[str],
+        max_per_tx_usd: float,
+        daily_limit_usd: float,
+        require_approval_above_usd: float,
+        expiry_days: int
+    ) -> AgentCredential:
+        res = await self._client.post(f"/agents/credentials/{parent_agent_id}/delegate", json={
+            "corridor_allowlist": corridor_allowlist,
+            "max_per_tx_usd": max_per_tx_usd,
+        })
+        handle_api_error(res)
+        return AgentCredential(**res.json())
+
+    async def list_organization_credentials(self, organization_id: str) -> List[AgentCredential]:
+        res = await self._client.get(f"/agents/credentials/organization/{organization_id}")
+        handle_api_error(res)
+        return [AgentCredential(**c) for c in res.json()]
+        res = await self._client.get(f"/agents/credentials/organization/{organization_id}")
+        handle_api_error(res)
+        return [AgentCredential(**c) for c in res.json()]
+
     async def revoke(self, agent_id: str):
         res = await self._client.delete(f"/agents/credentials/{agent_id}")
         handle_api_error(res)

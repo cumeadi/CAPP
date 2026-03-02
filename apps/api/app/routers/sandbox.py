@@ -66,6 +66,43 @@ async def reset_sandbox(authorization: str = Header(None)):
     logger.info("sandbox_reset")
     return {"status": "success", "message": "Sandbox values reset to defaults"}
 
+class FaucetRequest(BaseModel):
+    asset: str
+    amount: float
+    
+@router.post("/faucet")
+async def process_faucet(request: FaucetRequest, authorization: str = Header(None)):
+    """
+    Simulates dispensing testnet tokens to the authenticated agent's wallet.
+    Only available in Sandbox mode.
+    """
+    if not authorization or not authorization.startswith("Bearer sk_test_"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Sandbox actions require a test API key starting with 'sk_test_'"
+        )
+        
+    asset = request.asset.upper()
+    amount = request.amount
+    
+    if asset not in sandbox_state["balances"]["by_currency"]:
+        # Mock creating the wallet row if it doesn't exist
+        sandbox_state["balances"]["by_currency"][asset] = 0.0
+        
+    sandbox_state["balances"]["by_currency"][asset] += amount
+    
+    import uuid
+    tx_hash = f"mocktx_{uuid.uuid4().hex[:16]}"
+    
+    logger.info("sandbox_faucet_dispensed", asset=asset, amount=amount, tx_hash=tx_hash)
+    
+    return {
+        "status": "success",
+        "tx_hash": tx_hash,
+        "new_balance": sandbox_state["balances"]["by_currency"][asset],
+        "message": f"Dispensed {amount} {asset} to sandbox wallet."
+    }
+
 @router.get("/state")
 async def get_sandbox_state():
     """For local testing and debugging"""

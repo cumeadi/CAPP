@@ -54,13 +54,67 @@ async def issue_agent_credential(cred_in: AgentCredentialCreate):
     return AgentCredentialIssueResponse(**response_data)
 
 
-@router.get("/credentials/principal/{principal_id}", response_model=List[AgentCredentialResponse])
-async def list_agent_credentials(principal_id: uuid.UUID):
+@router.get("/credentials/organization/{organization_id}", response_model=List[AgentCredentialResponse])
+async def list_agent_credentials(organization_id: uuid.UUID):
     """
-    List all agent credentials issued by a specific human principal.
+    List all agent credentials belonging to a specific organization.
     """
-    creds = [c for c in mock_db_agent_creds.values() if c.principal_id == principal_id]
+    creds = [c for c in mock_db_agent_creds.values() if c.organization_id == organization_id]
     return [AgentCredentialResponse(**c.dict()) for c in creds]
+
+@router.post("/credentials/{parent_agent_id}/delegate", response_model=AgentCredentialIssueResponse, status_code=status.HTTP_201_CREATED)
+async def delegate_credential(parent_agent_id: str, cred_in: AgentCredentialCreate):
+    """
+    Delegate a sub-credential from an existing agent credential.
+    Enforces depth limits (max depth 2) and permission narrowing.
+    """
+    # 1. Find parent
+    parent_creds = [c for c in mock_db_agent_creds.values() if c.agent_id == parent_agent_id]
+    if not parent_creds:
+        raise HTTPException(status_code=404, detail="Parent agent credential not found")
+    parent_cred = parent_creds[0]
+
+    # 2. Check depth constraint
+    if parent_cred.parent_agent_id is not None:
+        raise HTTPException(status_code=400, detail="Delegation depth exceeded. Sub-agents cannot delegate further.")
+
+    # 3. Enforce permission narrowing
+    if parent_cred.max_per_tx_usd is not None:
+        if cred_in.max_per_tx_usd is None or cred_in.max_per_tx_usd > parent_cred.max_per_tx_usd:
+             raise HTTPException(status_code=400, detail="Sub-agent max_per_tx_usd cannot exceed parent's limit.")
+             
+    if parent_cred.daily_limit_usd is not None:
+         if cred_in.daily_limit_usd is None or cred_in.daily_limit_usd > parent_cred.daily_limit_usd:
+              raise HTTPException(status_code=400, detail="Sub-agent daily_limit_usd cannot exceed parent's limit.")
+              
+    if parent_cred.corridor_allowlist:
+         if not cred_in.corridor_allowlist or not set(cred_in.corridor_allowlist).issubset(set(parent_cred.corridor_allowlist)):
+              raise HTTPException(status_code=400, detail="Sub-agent corridors must be a subset of parent's allowed corridors.")
+
+    # 4. Issue credential
+    raw_api_key = f"capp_subagent_{secrets.token_urlsafe(32)}"
+    hashed_key = get_password_hash(raw_api_key)
+    
+    expires_at = datetime.now(timezone.utc) + timedelta(days=cred_in.expiry_days)
+    
+    # Ensure parent_agent_id is set
+    cred_data = cred_in.dict(exclude={"expiry_days"})
+    cred_data["parent_agent_id"] = parent_agent_id
+    cred_data["organization_id"] = parent_cred.organization_id # Inherit organization
+    cred_data["principal_id"] = parent_cred.principal_id # Inherit principal (if exists)
+    
+    db_cred = AgentCredentialInDB(
+        **cred_data,
+        hashed_api_key=hashed_key,
+        expires_at=expires_at
+    )
+    
+    mock_db_agent_creds[db_cred.id] = db_cred
+    
+    response_data = db_cred.dict()
+    response_data["raw_api_key"] = raw_api_key
+    
+    return AgentCredentialIssueResponse(**response_data)
 
 
 @router.patch("/credentials/{credential_id}", response_model=AgentCredentialResponse)

@@ -32,7 +32,7 @@ services:
 
   # PostgreSQL Database
   postgres:
-    image: postgres:15-alpine
+    image: timescale/timescaledb:latest-pg15
     container_name: capp-postgres
     environment:
       - POSTGRES_DB=capp_db
@@ -248,6 +248,7 @@ volumes:
   grafana_data:
   elasticsearch_data:
 
+
 networks:
   capp-network:
-    driver: bridge 
+    driver: bridge

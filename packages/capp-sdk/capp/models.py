@@ -31,6 +31,19 @@ class CorridorStatus(BaseModel):
     health: str
     avg_fee_pct: float
 
+class CorridorMetricRecord(BaseModel):
+    timestamp: datetime
+    liquidity_depth: float
+    avg_fee_pct: float
+    success_rate: float
+    tx_volume_usd: float
+
+class CorridorFeedResponse(BaseModel):
+    corridor: str
+    current_health: str
+    macro_context: Optional[str] = None
+    metrics: List[CorridorMetricRecord]
+
 class CorridorEvent(BaseModel):
     type: str
     corridor: str
@@ -38,8 +51,11 @@ class CorridorEvent(BaseModel):
 
 class AgentCredential(BaseModel):
     agent_id: str
-    token: str
-    policy: Dict[str, Any]
+    organization_id: Optional[str] = None
+    token: Optional[str] = None
+    raw_api_key: Optional[str] = None
+    parent_agent_id: Optional[str] = None
+    policy: Optional[Dict[str, Any]] = None
 
 class ApprovalRequest(BaseModel):
     approval_id: str

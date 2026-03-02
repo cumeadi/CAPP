@@ -19,6 +19,8 @@ export interface YieldStatsResponse {
     hot_wallet_balance: number;
     yield_balance: number;
     aptos_balance?: number;
+    solana_balance?: number;
+    stellar_balance?: number;
     apy: number;
     is_sweeping: boolean;
 }
@@ -105,7 +107,8 @@ export const api = {
     // Compliance Reports
     downloadComplianceReport: async (year: number, format: 'PDF' | 'CSV'): Promise<void> => {
         const token = localStorage.getItem('token');
-        const res = await fetch(`${API_BASE}/api/v1/compliance/reports/download?year=${year}&report_type=${format}`, {
+        // We'll hardcode 'demo-org' for now since the frontend MVP doesn't have org management yet.
+        const res = await fetch(`${API_BASE}/compliance/reports/csv?organization_id=demo-org`, {
             headers: token ? { 'Authorization': `Bearer ${token}` } : {}
         });
 
@@ -118,7 +121,7 @@ export const api = {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `capp_compliance_${year}.${format.toLowerCase()}`;
+        a.download = `capp_compliance_${year}.csv`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -155,6 +158,24 @@ export const api = {
             body: JSON.stringify(data)
         });
         if (!res.ok) throw new Error("Compliance check failed");
+        return res.json();
+    },
+
+    // Smart Sweep Optimization
+    optimizeYield: async (walletAddress: string, minSweepAmount?: number, bufferPct?: number): Promise<YieldStatsResponse> => {
+        const res = await fetch(`${API_BASE}/yield/optimize`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                wallet_address: walletAddress,
+                min_sweep_amount: minSweepAmount,
+                buffer_pct: bufferPct
+            })
+        });
+        if (!res.ok) {
+            console.error("Failed to optimize yield");
+            throw new Error('Optimize failed');
+        }
         return res.json();
     }
 };

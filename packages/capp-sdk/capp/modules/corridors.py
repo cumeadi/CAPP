@@ -1,7 +1,7 @@
 import json
 import httpx
 from typing import List, AsyncGenerator
-from ..models import CorridorStatus, CorridorEvent
+from ..models import CorridorStatus, CorridorEvent, CorridorFeedResponse
 from .._utils import handle_api_error
 
 class CorridorsModule:
@@ -12,6 +12,11 @@ class CorridorsModule:
         res = await self._client.get(f"/corridors/{corridor}/status")
         handle_api_error(res)
         return CorridorStatus(**res.json())
+
+    async def get_feed(self, corridor: str, lookback_days: int = 7) -> CorridorFeedResponse:
+        res = await self._client.get(f"/corridors/feed?corridor={corridor}&lookback_days={lookback_days}")
+        handle_api_error(res)
+        return CorridorFeedResponse(**res.json())
 
     async def list(self) -> List[str]:
         res = await self._client.get("/corridors")

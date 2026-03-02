@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from datetime import datetime
 from decimal import Decimal
 
@@ -89,6 +89,7 @@ class PaymentRoute(BaseModel):
     fee_usd: float
     eta_seconds: int
     recommendation_score: float
+    confidence_score: Optional[float] = None # Added for Phase 3 predictive scoring
     reason: str
     estimated_gas_token: float # Amount in native token (APT/MATIC/ETH)
 
@@ -148,3 +149,44 @@ class ContactResponse(ContactBase):
     
     class Config:
         from_attributes = True
+
+# Webhook Marketplace Schemas
+class WebhookThreshold(BaseModel):
+    fee_pct: Optional[float] = None
+    usd_value: Optional[float] = None
+
+class WebhookSubscriptionCreate(BaseModel):
+    event_type: str
+    corridor: str
+    threshold: Optional[Dict[str, Any]] = None
+    webhook_url: str
+
+class WebhookSubscriptionResponse(BaseModel):
+    id: str
+    agent_id: str
+    event_type: str
+    corridor: str
+    threshold: Optional[Dict[str, Any]] = None
+    webhook_url: str
+    is_active: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# Corridor Intelligence Schemas
+class CorridorMetricRecord(BaseModel):
+    timestamp: datetime
+    liquidity_depth: float
+    avg_fee_pct: float
+    success_rate: float
+    tx_volume_usd: float
+    
+    class Config:
+        from_attributes = True
+
+class CorridorFeedResponse(BaseModel):
+    corridor: str
+    current_health: str
+    macro_context: Optional[str] = None
+    metrics: List[CorridorMetricRecord]

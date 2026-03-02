@@ -32,6 +32,21 @@ export interface CorridorStatus {
     avgFeePct: number;
 }
 
+export interface CorridorMetricRecord {
+    timestamp: Date;
+    liquidityDepth: number;
+    avgFeePct: number;
+    successRate: number;
+    txVolumeUsd: number;
+}
+
+export interface CorridorFeedResponse {
+    corridor: string;
+    currentHealth: string;
+    macroContext?: string;
+    metrics: CorridorMetricRecord[];
+}
+
 export interface CorridorEvent {
     type: string;
     corridor: string;
@@ -40,8 +55,11 @@ export interface CorridorEvent {
 
 export interface AgentCredential {
     agentId: string;
-    token: string;
-    policy: Record<string, any>;
+    organizationId?: string;
+    token?: string;
+    rawApiKey?: string;
+    parentAgentId?: string;
+    policy?: Record<string, any>;
 }
 
 export interface ApprovalRequest {

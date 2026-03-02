@@ -7,3 +7,4 @@ export * from './modules/wallet';
 export * from './modules/corridors';
 export * from './modules/agents';
 export * from './modules/approvals';
+export * from './modules/events';

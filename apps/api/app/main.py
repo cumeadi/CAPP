@@ -14,9 +14,10 @@ from applications.capp.capp.core.redis import init_redis
 from applications.capp.capp.core.aptos import init_aptos_client
 from applications.capp.capp.core.polygon import init_polygon_client
 from applications.capp.capp.services.chain_listener import ChainListenerService
+from .services.webhook_dispatcher import WebhookDispatcherService
 
 from .database import engine, Base
-from .routers import wallet, agents, chain_data, bridge, starknet, routing, system, admin_dlq, identity, compliance, sandbox
+from .routers import wallet, agents, chain_data, bridge, starknet, routing, system, admin_dlq, identity, compliance, sandbox, market, events, corridors, admin_anomalies, compliance_reports, yield_api
 
 logger = structlog.get_logger(__name__)
 
@@ -42,6 +43,10 @@ async def lifespan(app: FastAPI):
     listener = ChainListenerService()
     asyncio.create_task(listener.start_listening())
     logger.info("chain_listener_started")
+    
+    webhook_dispatcher = WebhookDispatcherService()
+    asyncio.create_task(webhook_dispatcher.start_listening())
+    logger.info("webhook_dispatcher_service_started")
     
     yield
     # Shutdown
@@ -84,6 +89,12 @@ app.include_router(admin_dlq.router)
 app.include_router(identity.router)
 app.include_router(compliance.router)
 app.include_router(sandbox.router)
+app.include_router(market.router)
+app.include_router(events.router)
+app.include_router(corridors.router)
+app.include_router(admin_anomalies.router)
+app.include_router(compliance_reports.router)
+app.include_router(yield_api.router)
 
 @app.get("/")
 async def root():

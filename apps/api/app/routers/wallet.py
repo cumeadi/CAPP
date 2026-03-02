@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from .. import schemas, database, models
+from ..database import SessionLocal
 from datetime import datetime
 import sys
 import os
@@ -13,6 +14,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 from applications.capp.capp.core.aptos import get_aptos_client
 from applications.capp.capp.core.starknet import get_starknet_client
 from applications.capp.capp.core.polygon import PolygonSettlementService
+from applications.capp.capp.core.solana import get_solana_client
+from applications.capp.capp.core.stellar import get_stellar_client
 from applications.capp.capp.agents.settlement.settlement_agent import SettlementAgent, SettlementConfig
 from applications.capp.capp.models.payments import (
     PaymentBatch, CrossBorderPayment, PaymentStatus, Currency,
@@ -21,6 +24,7 @@ from applications.capp.capp.models.payments import (
 from .. import state
 from applications.capp.capp.services.approval import get_approval_service
 from applications.capp.capp.config.settings import settings
+from applications.capp.capp.services.anomaly_detection import anomaly_detector
 
 router = APIRouter(
     prefix="/wallet",
@@ -138,6 +142,11 @@ async def send_transaction(request: schemas.TransactionRequest):
                 requires_approval = True
                 approval_reason = f"Guarded Mode: Amount {request.amount} exceeds auto-limit of 1000."
 
+        # Security Hook: Plumb through Anomaly Detection
+        # Usually from the authenticated agent ID. For demo, we use sender_id.
+        active_agent_id = request.sender_id
+        anomaly_detector.analyze_transaction(agent_id=active_agent_id, tx_req=request)
+
         if requires_approval:
             req_id = get_approval_service().request_approval(
                 agent_id="settlement_agent",
@@ -207,16 +216,24 @@ async def send_transaction(request: schemas.TransactionRequest):
             to_currency=to_curr
         )
         
-        # 2. Execute Settlement
-        # The agent returns a tx_hash string
-        tx_hash = await agent.execute_settlement(batch)
+        # 3. Write to Payment Memory Layer
+        db = SessionLocal()
+        try:
+            memory_record = models.PaymentMemoryRecord(
+                tx_hash=tx_hash,
+                corridor=f"{request.from_currency}-{request.to_currency}",
+                target_chain=request.target_chain or "UNKNOWN",
+                amount_usd=float(request.amount),
+                execution_time_ms=1200, # Mock execution time
+                success=True
+            )
+            db.add(memory_record)
+            db.commit()
+        except Exception as e:
+            evt_logger.error("failed_to_write_payment_memory", error=str(e))
+        finally:
+            db.close()
         
-        return schemas.TransactionResponse(
-            tx_hash=tx_hash,
-            status="SUBMITTED",
-            timestamp=datetime.utcnow()
-        )
-            
         return schemas.TransactionResponse(
             tx_hash=tx_hash,
             status="SUBMITTED",
@@ -239,6 +256,8 @@ async def get_wallet_stats():
     try:
         total_usd = 0.0
         hot_wallet = 0.0
+        bal_sol = 0.0
+        bal_xlm = 0.0
         
         # 1. Aptos
         try:
@@ -301,12 +320,34 @@ async def get_wallet_stats():
         except Exception as e:
              print(f"Stats Starknet Error: {e}")
 
+        # 4. Solana
+        try:
+            sol_client = get_solana_client()
+            bal_sol = await sol_client.get_balance("default")
+            SOL_PRICE = 150.0
+            total_usd += float(bal_sol) * SOL_PRICE
+            hot_wallet += float(bal_sol) * SOL_PRICE
+        except Exception as e:
+             print(f"Stats Solana Error: {e}")
+
+        # 5. Stellar
+        try:
+            xlm_client = get_stellar_client()
+            bal_xlm = await xlm_client.get_balance("default")
+            XLM_PRICE = 0.12
+            total_usd += float(bal_xlm) * XLM_PRICE
+            hot_wallet += float(bal_xlm) * XLM_PRICE
+        except Exception as e:
+             print(f"Stats Stellar Error: {e}")
+
         return {
             "total_value_usd": total_usd,
             "hot_wallet_balance": hot_wallet,
             "yield_balance": 0.0, # Placeholder for Defi positions
             "apy": 6.8, # Placeholder
-            "is_sweeping": True
+            "is_sweeping": True,
+            "solana_balance": float(bal_sol),
+            "stellar_balance": float(bal_xlm)
         }
     except Exception as e:
         print(f"Stats Error: {e}")
@@ -316,5 +357,7 @@ async def get_wallet_stats():
             "hot_wallet_balance": 0.0,
             "yield_balance": 0.0,
             "apy": 0.0,
-            "is_sweeping": False
+            "is_sweeping": False,
+            "solana_balance": 0.0,
+            "stellar_balance": 0.0
         }

@@ -6,6 +6,9 @@ from .modules.wallet import WalletModule
 from .modules.corridors import CorridorsModule
 from .modules.agents import AgentsModule
 from .modules.approvals import ApprovalsModule
+from .modules.events import EventsModule
+from .modules.compliance import ComplianceModule
+from .modules.yield_api import YieldModule
 
 class CAPPClient:
     def __init__(
@@ -43,6 +46,24 @@ class CAPPClient:
         self.corridors = CorridorsModule(self._http_client)
         self.agents = AgentsModule(self._http_client)
         self.approvals = ApprovalsModule(self._http_client)
+        self.events = EventsModule(self)
+        self.compliance = ComplianceModule(self._http_client)
+        self.yield_api = YieldModule(self._http_client)
+
+    async def sandbox_faucet(self, asset: str, amount: float) -> dict:
+        """
+        Request mock assets for your agent's sandbox wallet.
+        """
+        if not self.sandbox:
+            raise ValueError("Faucet is only available in Sandbox mode (sandbox=True).")
+            
+        res = await self._http_client.post("/sandbox/faucet", json={
+            "asset": asset,
+            "amount": amount
+        })
+        from ._utils import handle_api_error
+        handle_api_error(res)
+        return res.json()
 
     async def close(self):
         await self._http_client.aclose()
