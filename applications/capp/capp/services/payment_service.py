@@ -1,8 +1,17 @@
 """
 Payment Service for CAPP
 
-This service orchestrates the payment processing workflow using autonomous agents
-for route optimization, compliance checking, and settlement.
+Orchestrates the full payment processing pipeline using all five autonomous agents:
+  1. Route Optimization  — finds the optimal corridor and MMO route
+  2. Exchange Rate       — aggregates rates and locks the best rate
+  3. Compliance          — KYC/AML/sanctions screening (runs in parallel with #4)
+  4. Liquidity           — reserves funds in the target corridor pool
+  5. Settlement          — submits the blockchain transaction on Aptos
+
+The Saga pattern is used to guarantee clean rollback of any partial state when a
+step fails mid-pipeline.  The AgentEventBus publishes lifecycle events that other
+components (e.g. notification services, monitoring) can subscribe to without
+coupling to this service.
 """
 
 import asyncio
@@ -11,14 +20,20 @@ from uuid import UUID
 from datetime import datetime, timezone
 
 import structlog
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.payments import (
-    CrossBorderPayment, PaymentResult, PaymentStatus, PaymentBatch
+    CrossBorderPayment, PaymentResult, PaymentStatus, PaymentBatch,
+    Currency,
 )
 from ..agents.base import agent_registry
+from ..agents.event_bus import agent_event_bus, AgentEvent, AgentEventType
+from ..agents.payment_saga import PaymentSaga
 from ..agents.routing.route_optimization_agent import RouteOptimizationAgent, RouteOptimizationConfig
+from ..agents.compliance.compliance_agent import ComplianceAgent, ComplianceConfig
+from ..agents.liquidity.liquidity_agent import LiquidityAgent, LiquidityConfig
+from ..agents.exchange.exchange_rate_agent import ExchangeRateAgent, ExchangeRateConfig
+from ..agents.settlement.settlement_agent import SettlementAgent, SettlementConfig
 from ..core.database import get_database_session
 from ..core.redis import get_cache
 from ..config.settings import get_settings
@@ -30,249 +45,366 @@ logger = structlog.get_logger(__name__)
 
 class PaymentService:
     """
-    Payment Service
-    
-    Orchestrates the complete payment processing workflow including:
-    - Route optimization
-    - Compliance checking
-    - Settlement processing
-    - Status tracking
+    Orchestrates the complete payment processing workflow.
+
+    All five agents are initialised once at startup and reused for every
+    payment.  The Saga pattern ensures that reserved liquidity, locked
+    exchange rates, and any other side-effects are reversed automatically
+    if any step fails.
     """
-    
+
     def __init__(self):
         self.settings = get_settings()
         self.cache = get_cache()
         self.logger = structlog.get_logger(__name__)
-        
-        # Initialize agents
         self._initialize_agents()
-    
+
+    # ------------------------------------------------------------------
+    # Initialisation
+    # ------------------------------------------------------------------
+
     def _initialize_agents(self):
-        """Initialize payment processing agents"""
+        """Create and register all five payment-processing agents."""
         try:
-            # Register route optimization agent
-            route_config = RouteOptimizationConfig()
-            route_agent = RouteOptimizationAgent(route_config)
+            self.route_agent = RouteOptimizationAgent(RouteOptimizationConfig())
+            self.exchange_agent = ExchangeRateAgent(ExchangeRateConfig())
+            self.compliance_agent = ComplianceAgent(ComplianceConfig())
+            self.liquidity_agent = LiquidityAgent(LiquidityConfig())
+            self.settlement_agent = SettlementAgent(SettlementConfig())
+
+            # Register in the shared registry so health-checks can reach them
             agent_registry.register_agent_type("route_optimization", RouteOptimizationAgent)
-            
-            self.logger.info("Payment service agents initialized")
-            
+            agent_registry.register_agent_type("exchange_rate", ExchangeRateAgent)
+            agent_registry.register_agent_type("compliance", ComplianceAgent)
+            agent_registry.register_agent_type("liquidity_management", LiquidityAgent)
+            agent_registry.register_agent_type("settlement", SettlementAgent)
+
+            self.logger.info("All payment agents initialised successfully")
+
         except Exception as e:
-            self.logger.error("Failed to initialize agents", error=str(e))
+            self.logger.error("Failed to initialise agents", error=str(e))
             raise
-    
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     async def process_payment(self, payment: CrossBorderPayment) -> PaymentResult:
         """
-        Process a cross-border payment through the complete workflow
-        
-        Args:
-            payment: The payment to process
-            
-        Returns:
-            PaymentResult: The result of the payment processing
+        Run the full payment pipeline with automatic rollback on failure.
+
+        Pipeline (with parallelism where safe):
+            Step 1  – Route optimisation
+            Step 2  – Exchange rate lock
+            Step 3a – Compliance check     ┐  parallel
+            Step 3b – Liquidity reservation┘
+            Step 4  – Settlement
         """
+        saga = PaymentSaga(payment.payment_id)
+
+        self.logger.info(
+            "Starting payment processing",
+            payment_id=str(payment.payment_id),
+            amount=str(payment.amount),
+            from_country=payment.sender.country,
+            to_country=payment.recipient.country,
+        )
+
         try:
-            self.logger.info(
-                "Processing payment",
-                payment_id=payment.payment_id,
-                amount=payment.amount,
-                from_country=payment.sender.country,
-                to_country=payment.recipient.country
-            )
-            
-            # Step 1: Route Optimization
-            route_result = await self._optimize_route(payment)
+            # ── Step 1: Route optimisation ──────────────────────────────
+            route_result = await self.route_agent.process_payment_with_retry(payment)
             if not route_result.success:
-                return route_result
-            
-            # Step 2: Compliance Check
-            compliance_result = await self._check_compliance(payment)
-            if not compliance_result.success:
-                return compliance_result
-            
-            # Step 3: Fraud Detection
-            fraud_result = await self._detect_fraud(payment)
-            if not fraud_result.success:
-                return fraud_result
-            
-            # Step 4: Settlement
-            settlement_result = await self._settle_payment(payment)
-            if not settlement_result.success:
-                return settlement_result
-            
-            # Step 5: Update payment status
-            payment.update_status(PaymentStatus.COMPLETED)
-            
-            # Step 6: Store payment in database
-            await self._store_payment(payment)
-            
-            self.logger.info(
-                "Payment processed successfully",
+                return self._fail(payment, route_result.message, "ROUTE_OPTIMIZATION_ERROR")
+
+            await agent_event_bus.publish(AgentEvent(
+                event_type=AgentEventType.ROUTE_SELECTED,
                 payment_id=payment.payment_id,
-                transaction_hash=settlement_result.transaction_hash
+                agent_type="route_optimization",
+                data={"route": str(payment.selected_route)},
+            ))
+
+            # ── Step 2: Lock exchange rate ──────────────────────────────
+            rate_result = await self.exchange_agent.get_optimal_rate(
+                payment.from_currency, payment.to_currency
             )
-            
+            if not rate_result.success or rate_result.rate is None:
+                return self._fail(payment, rate_result.message, "EXCHANGE_RATE_ERROR")
+
+            lock_result = await self.exchange_agent.lock_exchange_rate(payment, rate_result.rate)
+            if not lock_result.success or lock_result.rate_lock_id is None:
+                return self._fail(payment, lock_result.message, "EXCHANGE_RATE_LOCK_ERROR")
+
+            # Attach the locked rate to the payment
+            payment.exchange_rate = lock_result.rate
+
+            # Register compensation: unlock rate if something later fails
+            rate_lock_id = lock_result.rate_lock_id
+            saga.register_compensation(
+                "unlock_exchange_rate",
+                lambda: self.exchange_agent.unlock_exchange_rate(rate_lock_id),
+            )
+
+            await agent_event_bus.publish(AgentEvent(
+                event_type=AgentEventType.RATE_LOCKED,
+                payment_id=payment.payment_id,
+                agent_type="exchange_rate",
+                data={"rate": str(lock_result.rate), "lock_id": rate_lock_id},
+            ))
+
+            # ── Step 3: Compliance + Liquidity in parallel ──────────────
+            compliance_task = asyncio.create_task(
+                self.compliance_agent.validate_payment_compliance(payment)
+            )
+            liquidity_task = asyncio.create_task(
+                self.liquidity_agent.reserve_liquidity(payment)
+            )
+
+            compliance_result, liquidity_result = await asyncio.gather(
+                compliance_task, liquidity_task, return_exceptions=True
+            )
+
+            # Handle compliance result
+            if isinstance(compliance_result, Exception):
+                await saga.rollback()
+                return self._fail(payment, str(compliance_result), "COMPLIANCE_ERROR")
+            if not compliance_result.is_compliant:
+                await saga.rollback()
+                await agent_event_bus.publish(AgentEvent(
+                    event_type=AgentEventType.COMPLIANCE_FAILED,
+                    payment_id=payment.payment_id,
+                    agent_type="compliance",
+                    data={"violations": compliance_result.violations},
+                ))
+                return self._fail(
+                    payment,
+                    f"Compliance failed: {', '.join(compliance_result.violations)}",
+                    "COMPLIANCE_REJECTED",
+                )
+
+            await agent_event_bus.publish(AgentEvent(
+                event_type=AgentEventType.COMPLIANCE_PASSED,
+                payment_id=payment.payment_id,
+                agent_type="compliance",
+                data={"risk_level": compliance_result.risk_level},
+            ))
+
+            # Handle liquidity result
+            if isinstance(liquidity_result, Exception):
+                await saga.rollback()
+                return self._fail(payment, str(liquidity_result), "LIQUIDITY_ERROR")
+            if not liquidity_result.success or liquidity_result.reservation_id is None:
+                await saga.rollback()
+                await agent_event_bus.publish(AgentEvent(
+                    event_type=AgentEventType.LIQUIDITY_INSUFFICIENT,
+                    payment_id=payment.payment_id,
+                    agent_type="liquidity_management",
+                    data={"available": str(liquidity_result.available_amount)},
+                ))
+                return self._fail(payment, liquidity_result.message, "INSUFFICIENT_LIQUIDITY")
+
+            # Register compensation: release reservation if settlement fails
+            reservation_id = liquidity_result.reservation_id
+            saga.register_compensation(
+                "release_liquidity",
+                lambda: self.liquidity_agent.release_liquidity(reservation_id),
+            )
+
+            await agent_event_bus.publish(AgentEvent(
+                event_type=AgentEventType.LIQUIDITY_RESERVED,
+                payment_id=payment.payment_id,
+                agent_type="liquidity_management",
+                data={"reservation_id": reservation_id, "amount": str(liquidity_result.reserved_amount)},
+            ))
+
+            # ── Step 4: Settlement ───────────────────────────────────────
+            settlement_result = await self.settlement_agent.process_payment(payment)
+            if not settlement_result.success:
+                await saga.rollback()
+                await agent_event_bus.publish(AgentEvent(
+                    event_type=AgentEventType.SETTLEMENT_FAILED,
+                    payment_id=payment.payment_id,
+                    agent_type="settlement",
+                    data={"error": settlement_result.message},
+                ))
+                return self._fail(payment, settlement_result.message, "SETTLEMENT_ERROR")
+
+            # ── Success ─────────────────────────────────────────────────
+            payment.update_status(PaymentStatus.COMPLETED)
+            payment.blockchain_tx_hash = settlement_result.transaction_hash
+            await self._store_payment(payment)
+
+            await agent_event_bus.publish(AgentEvent(
+                event_type=AgentEventType.PAYMENT_COMPLETED,
+                payment_id=payment.payment_id,
+                agent_type="payment_service",
+                data={"tx_hash": settlement_result.transaction_hash},
+            ))
+
+            self.logger.info(
+                "Payment completed successfully",
+                payment_id=str(payment.payment_id),
+                tx_hash=settlement_result.transaction_hash,
+                steps_completed=saga.completed_step_names,
+            )
+
             return PaymentResult(
                 success=True,
                 payment_id=payment.payment_id,
                 status=PaymentStatus.COMPLETED,
                 message="Payment processed successfully",
                 transaction_hash=settlement_result.transaction_hash,
-                estimated_delivery_time=payment.selected_route.estimated_delivery_time if payment.selected_route else None,
+                estimated_delivery_time=(
+                    payment.selected_route.estimated_delivery_time
+                    if payment.selected_route else None
+                ),
                 fees_charged=payment.fees,
-                exchange_rate_used=payment.exchange_rate
+                exchange_rate_used=payment.exchange_rate,
             )
-            
+
         except Exception as e:
             self.logger.error(
-                "Payment processing failed",
-                payment_id=payment.payment_id,
+                "Unexpected error during payment processing",
+                payment_id=str(payment.payment_id),
                 error=str(e),
-                exc_info=True
+                exc_info=True,
             )
-            
+            await saga.rollback()
             payment.update_status(PaymentStatus.FAILED)
-            
-            return PaymentResult(
-                success=False,
+
+            await agent_event_bus.publish(AgentEvent(
+                event_type=AgentEventType.PAYMENT_FAILED,
                 payment_id=payment.payment_id,
-                status=PaymentStatus.FAILED,
-                message=f"Payment processing failed: {str(e)}",
-                error_code="PROCESSING_ERROR"
-            )
-    
-    async def _optimize_route(self, payment: CrossBorderPayment) -> PaymentResult:
-        """Optimize payment route using route optimization agent"""
-        try:
-            # Get route optimization agent
-            route_agents = agent_registry.get_agents_by_type("route_optimization")
-            if not route_agents:
-                # Create new agent if none exists
-                route_config = RouteOptimizationConfig()
-                route_agent = RouteOptimizationAgent(route_config)
-                agent_registry.create_agent("route_optimization", route_config)
-                route_agents = [route_agent]
-            
-            route_agent = route_agents[0]
-            
-            # Process payment with route optimization
-            result = await route_agent.process_payment_with_retry(payment)
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error("Route optimization failed", error=str(e))
-            return PaymentResult(
-                success=False,
-                payment_id=payment.payment_id,
-                status=PaymentStatus.FAILED,
-                message=f"Route optimization failed: {str(e)}",
-                error_code="ROUTE_OPTIMIZATION_ERROR"
-            )
-    
-    async def _check_compliance(self, payment: CrossBorderPayment) -> PaymentResult:
-        """Check compliance requirements for the payment"""
-        try:
-            # This would integrate with actual compliance service
-            # For now, return success
-            self.logger.info("Compliance check passed", payment_id=payment.payment_id)
-            
-            return PaymentResult(
-                success=True,
-                payment_id=payment.payment_id,
-                status=PaymentStatus.PROCESSING,
-                message="Compliance check passed"
-            )
-            
-        except Exception as e:
-            self.logger.error("Compliance check failed", error=str(e))
-            return PaymentResult(
-                success=False,
-                payment_id=payment.payment_id,
-                status=PaymentStatus.FAILED,
-                message=f"Compliance check failed: {str(e)}",
-                error_code="COMPLIANCE_ERROR"
-            )
-    
-    async def _detect_fraud(self, payment: CrossBorderPayment) -> PaymentResult:
-        """Detect potential fraud in the payment"""
-        try:
-            # This would integrate with actual fraud detection service
-            # For now, return success
-            self.logger.info("Fraud detection passed", payment_id=payment.payment_id)
-            
-            return PaymentResult(
-                success=True,
-                payment_id=payment.payment_id,
-                status=PaymentStatus.PROCESSING,
-                message="Fraud detection passed"
-            )
-            
-        except Exception as e:
-            self.logger.error("Fraud detection failed", error=str(e))
-            return PaymentResult(
-                success=False,
-                payment_id=payment.payment_id,
-                status=PaymentStatus.FAILED,
-                message=f"Fraud detection failed: {str(e)}",
-                error_code="FRAUD_DETECTION_ERROR"
-            )
-    
-    async def _settle_payment(self, payment: CrossBorderPayment) -> PaymentResult:
-        """Settle the payment on the blockchain"""
-        try:
-            # This would integrate with actual settlement service
-            # For now, return mock success
-            mock_tx_hash = f"0x{payment.payment_id.hex[:64]}"
-            
-            payment.blockchain_tx_hash = mock_tx_hash
-            
-            self.logger.info(
-                "Payment settled",
-                payment_id=payment.payment_id,
-                transaction_hash=mock_tx_hash
-            )
-            
-            return PaymentResult(
-                success=True,
-                payment_id=payment.payment_id,
-                status=PaymentStatus.SETTLING,
-                message="Payment settled successfully",
-                transaction_hash=mock_tx_hash
-            )
-            
-        except Exception as e:
-            self.logger.error("Payment settlement failed", error=str(e))
-            return PaymentResult(
-                success=False,
-                payment_id=payment.payment_id,
-                status=PaymentStatus.FAILED,
-                message=f"Payment settlement failed: {str(e)}",
-                error_code="SETTLEMENT_ERROR"
-            )
-    
-    async def _store_payment(self, payment: CrossBorderPayment, user_id: Optional[UUID] = None) -> None:
-        """Store payment in database"""
+                agent_type="payment_service",
+                data={"error": str(e)},
+            ))
+
+            return self._fail(payment, f"Payment processing failed: {e}", "PROCESSING_ERROR")
+
+    async def get_payment(self, payment_id: UUID) -> Optional[CrossBorderPayment]:
+        """Retrieve a payment by ID from the database."""
         try:
             async with get_database_session() as session:
                 repo = PaymentRepository(session)
+                db_payment = await repo.get_by_id(payment_id)
+                if not db_payment:
+                    self.logger.warning("Payment not found", payment_id=str(payment_id))
+                    return None
+                return db_payment_to_crossborder(db_payment)
+        except Exception as e:
+            self.logger.error("Failed to get payment", payment_id=str(payment_id), error=str(e))
+            return None
 
-                # Convert Pydantic model to SQLAlchemy model
+    async def cancel_payment(self, payment_id: UUID) -> PaymentResult:
+        """Cancel a payment if it is still in a cancellable state."""
+        try:
+            payment = await self.get_payment(payment_id)
+            if not payment:
+                return PaymentResult(
+                    success=False,
+                    payment_id=payment_id,
+                    status=PaymentStatus.FAILED,
+                    message="Payment not found",
+                    error_code="PAYMENT_NOT_FOUND",
+                )
+
+            if not payment.can_be_cancelled():
+                return PaymentResult(
+                    success=False,
+                    payment_id=payment_id,
+                    status=PaymentStatus.FAILED,
+                    message="Payment cannot be cancelled in its current state",
+                    error_code="CANCELLATION_NOT_ALLOWED",
+                )
+
+            payment.update_status(PaymentStatus.CANCELLED)
+            await self._store_payment(payment)
+            self.logger.info("Payment cancelled", payment_id=str(payment_id))
+
+            return PaymentResult(
+                success=True,
+                payment_id=payment_id,
+                status=PaymentStatus.CANCELLED,
+                message="Payment cancelled successfully",
+            )
+        except Exception as e:
+            self.logger.error("Failed to cancel payment", payment_id=str(payment_id), error=str(e))
+            return PaymentResult(
+                success=False,
+                payment_id=payment_id,
+                status=PaymentStatus.FAILED,
+                message=f"Failed to cancel payment: {e}",
+                error_code="CANCELLATION_ERROR",
+            )
+
+    async def process_batch_payments(self, payments: List[CrossBorderPayment]) -> List[PaymentResult]:
+        """Process multiple payments concurrently."""
+        self.logger.info("Processing batch payments", count=len(payments))
+        tasks = [self.process_payment(p) for p in payments]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        processed: List[PaymentResult] = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                processed.append(PaymentResult(
+                    success=False,
+                    payment_id=payments[i].payment_id,
+                    status=PaymentStatus.FAILED,
+                    message=f"Batch processing failed: {result}",
+                    error_code="BATCH_PROCESSING_ERROR",
+                ))
+            else:
+                processed.append(result)
+
+        self.logger.info(
+            "Batch processing complete",
+            total=len(payments),
+            successful=sum(1 for r in processed if r.success),
+            failed=sum(1 for r in processed if not r.success),
+        )
+        return processed
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _fail(
+        self,
+        payment: CrossBorderPayment,
+        message: str,
+        error_code: str,
+    ) -> PaymentResult:
+        """Build a failed PaymentResult and update payment status."""
+        payment.update_status(PaymentStatus.FAILED)
+        self.logger.warning(
+            "Payment failed",
+            payment_id=str(payment.payment_id),
+            error_code=error_code,
+            message=message,
+        )
+        return PaymentResult(
+            success=False,
+            payment_id=payment.payment_id,
+            status=PaymentStatus.FAILED,
+            message=message,
+            error_code=error_code,
+        )
+
+    async def _store_payment(self, payment: CrossBorderPayment, user_id: Optional[UUID] = None) -> None:
+        """Persist payment to the database (create or update)."""
+        try:
+            async with get_database_session() as session:
+                repo = PaymentRepository(session)
                 db_payment = crossborder_payment_to_db(payment, user_id=user_id)
+                existing = await repo.get_by_id(payment.payment_id)
 
-                # Check if payment already exists (update scenario)
-                existing_payment = await repo.get_by_id(payment.payment_id)
-
-                if existing_payment:
-                    # Update existing payment
+                if existing:
                     await repo.update_status(
                         payment.payment_id,
                         payment.status.value,
-                        blockchain_tx_hash=payment.blockchain_tx_hash
+                        blockchain_tx_hash=payment.blockchain_tx_hash,
                     )
-                    self.logger.info("Payment updated", payment_id=payment.payment_id)
+                    self.logger.info("Payment updated in database", payment_id=str(payment.payment_id))
                 else:
-                    # Create new payment
                     await repo.create(
                         payment_id=db_payment.id,
                         user_id=db_payment.user_id,
@@ -316,140 +448,11 @@ class PaymentService:
                         created_at=db_payment.created_at,
                         expires_at=db_payment.expires_at,
                     )
-                    self.logger.info("Payment stored", payment_id=payment.payment_id)
-
+                    self.logger.info("Payment stored in database", payment_id=str(payment.payment_id))
         except Exception as e:
-            self.logger.error("Failed to store payment", payment_id=payment.payment_id, error=str(e))
+            self.logger.error(
+                "Failed to store payment",
+                payment_id=str(payment.payment_id),
+                error=str(e),
+            )
             raise
-    
-    async def get_payment(self, payment_id: UUID) -> Optional[CrossBorderPayment]:
-        """
-        Get payment by ID
-
-        Args:
-            payment_id: The payment ID
-
-        Returns:
-            CrossBorderPayment: The payment, or None if not found
-        """
-        try:
-            async with get_database_session() as session:
-                repo = PaymentRepository(session)
-
-                # Get payment from database
-                db_payment = await repo.get_by_id(payment_id)
-
-                if not db_payment:
-                    self.logger.warning("Payment not found", payment_id=payment_id)
-                    return None
-
-                # Convert SQLAlchemy model to Pydantic model
-                payment = db_payment_to_crossborder(db_payment)
-
-                self.logger.info("Payment retrieved", payment_id=payment_id)
-                return payment
-
-        except Exception as e:
-            self.logger.error("Failed to get payment", payment_id=payment_id, error=str(e))
-            return None
-    
-    async def cancel_payment(self, payment_id: UUID) -> PaymentResult:
-        """
-        Cancel a payment
-        
-        Args:
-            payment_id: The payment ID to cancel
-            
-        Returns:
-            PaymentResult: The result of the cancellation
-        """
-        try:
-            payment = await self.get_payment(payment_id)
-            
-            if not payment:
-                return PaymentResult(
-                    success=False,
-                    payment_id=payment_id,
-                    status=PaymentStatus.FAILED,
-                    message="Payment not found",
-                    error_code="PAYMENT_NOT_FOUND"
-                )
-            
-            if not payment.can_be_cancelled():
-                return PaymentResult(
-                    success=False,
-                    payment_id=payment_id,
-                    status=PaymentStatus.FAILED,
-                    message="Payment cannot be cancelled",
-                    error_code="CANCELLATION_NOT_ALLOWED"
-                )
-            
-            # Update payment status
-            payment.update_status(PaymentStatus.CANCELLED)
-            
-            # Store updated payment
-            await self._store_payment(payment)
-            
-            self.logger.info("Payment cancelled", payment_id=payment_id)
-            
-            return PaymentResult(
-                success=True,
-                payment_id=payment_id,
-                status=PaymentStatus.CANCELLED,
-                message="Payment cancelled successfully"
-            )
-            
-        except Exception as e:
-            self.logger.error("Failed to cancel payment", payment_id=payment_id, error=str(e))
-            
-            return PaymentResult(
-                success=False,
-                payment_id=payment_id,
-                status=PaymentStatus.FAILED,
-                message=f"Failed to cancel payment: {str(e)}",
-                error_code="CANCELLATION_ERROR"
-            )
-    
-    async def process_batch_payments(self, payments: List[CrossBorderPayment]) -> List[PaymentResult]:
-        """
-        Process multiple payments in batch
-        
-        Args:
-            payments: List of payments to process
-            
-        Returns:
-            List[PaymentResult]: Results for each payment
-        """
-        try:
-            self.logger.info("Processing batch payments", count=len(payments))
-            
-            # Process payments concurrently
-            tasks = [self.process_payment(payment) for payment in payments]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # Convert exceptions to failed results
-            processed_results = []
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    processed_results.append(PaymentResult(
-                        success=False,
-                        payment_id=payments[i].payment_id,
-                        status=PaymentStatus.FAILED,
-                        message=f"Batch processing failed: {str(result)}",
-                        error_code="BATCH_PROCESSING_ERROR"
-                    ))
-                else:
-                    processed_results.append(result)
-            
-            self.logger.info(
-                "Batch processing completed",
-                total=len(payments),
-                successful=sum(1 for r in processed_results if r.success),
-                failed=sum(1 for r in processed_results if not r.success)
-            )
-            
-            return processed_results
-            
-        except Exception as e:
-            self.logger.error("Batch processing failed", error=str(e))
-            raise 
