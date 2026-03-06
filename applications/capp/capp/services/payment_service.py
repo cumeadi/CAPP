@@ -150,7 +150,7 @@ class PaymentService:
                 # Create new agent if none exists
                 route_config = RouteOptimizationConfig()
                 route_agent = RouteOptimizationAgent(route_config)
-                agent_registry.create_agent("route_optimization", route_config)
+                await agent_registry.create_agent("route_optimization", route_config)
                 route_agents = [route_agent]
             
             route_agent = route_agents[0]

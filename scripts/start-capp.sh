@@ -38,9 +38,11 @@ check_port 3000 || exit 1
 
 # Start backend in background
 echo "🔧 Starting CAPP Backend (FastAPI) on port 8000..."
-cd /Users/chikau/Desktop/CAPP
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
 source venv/bin/activate
-python -m uvicorn applications.capp.capp.main:app --host 0.0.0.0 --port 8000 --reload &
+PYTHONPATH="$REPO_ROOT/applications/capp" \
+  python -m uvicorn applications.capp.capp.main:app --host 0.0.0.0 --port 8000 --reload &
 BACKEND_PID=$!
 
 # Wait a moment for backend to start
@@ -57,7 +59,7 @@ fi
 
 # Start frontend in background
 echo "🎨 Starting CAPP Frontend (React) on port 3000..."
-cd /Users/chikau/Desktop/CAPP/applications/capp/capp-frontend
+cd "$REPO_ROOT/apps/web"
 npm start &
 FRONTEND_PID=$!
 

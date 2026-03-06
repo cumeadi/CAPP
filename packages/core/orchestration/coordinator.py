@@ -7,7 +7,7 @@ agent selection, and inter-agent communication.
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Any, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Any, Union
 from enum import Enum
 import random
 
@@ -16,6 +16,9 @@ from pydantic import BaseModel, Field
 
 from packages.core.agents.base import BaseFinancialAgent, AgentRegistry, ProcessingResult
 from packages.core.agents.financial_base import FinancialTransaction
+
+if TYPE_CHECKING:
+    from packages.core.orchestration.state_manager import StateManager
 
 
 logger = structlog.get_logger(__name__)
@@ -52,19 +55,24 @@ class AgentCoordinator:
     - Agent health management
     """
     
-    def __init__(self, agent_registry: AgentRegistry):
+    def __init__(
+        self,
+        agent_registry: AgentRegistry,
+        state_manager: Optional["StateManager"] = None,
+    ):
         self.agent_registry = agent_registry
+        self._state_manager = state_manager
         self.logger = structlog.get_logger(__name__)
-        
+
         # Load balancing state
         self._round_robin_counters: Dict[str, int] = {}
         self._agent_usage_count: Dict[str, int] = {}
         self._agent_performance: Dict[str, float] = {}
-        
+
         # Coordination state
         self._active_transactions: Dict[str, List[str]] = {}  # transaction_id -> agent_ids
         self._agent_transactions: Dict[str, List[str]] = {}   # agent_id -> transaction_ids
-        
+
         self.logger.info("Agent coordinator initialized")
     
     async def select_agents(
@@ -189,35 +197,52 @@ class AgentCoordinator:
             return agents[:min_agents] if agents else []
     
     async def _round_robin_selection(
-        self, 
-        agents: List[BaseFinancialAgent], 
+        self,
+        agents: List[BaseFinancialAgent],
         min_agents: int,
-        max_agents: int
+        max_agents: int,
     ) -> List[BaseFinancialAgent]:
-        """Round robin agent selection"""
+        """Round robin agent selection with distributed lock on the counter."""
+        agent_type = agents[0].agent_type if agents else ""
+        lock_key = f"coordinator:rr:{agent_type}"
+        lock_acquired = False
+
         try:
-            agent_type = agents[0].agent_type if agents else ""
-            
+            # Acquire distributed lock before mutating the round-robin counter
+            if self._state_manager:
+                lock_acquired = await self._state_manager.acquire_lock(lock_key, ttl=5)
+                if not lock_acquired:
+                    self.logger.warning(
+                        "Could not acquire round-robin lock — proceeding without lock",
+                        agent_type=agent_type,
+                    )
+
             # Initialize counter if not exists
             if agent_type not in self._round_robin_counters:
                 self._round_robin_counters[agent_type] = 0
-            
+
             # Select agents using round robin
             selected_agents = []
             num_agents = min(len(agents), max_agents)
-            
+
             for i in range(num_agents):
                 index = (self._round_robin_counters[agent_type] + i) % len(agents)
                 selected_agents.append(agents[index])
-            
+
             # Update counter
-            self._round_robin_counters[agent_type] = (self._round_robin_counters[agent_type] + num_agents) % len(agents)
-            
+            self._round_robin_counters[agent_type] = (
+                self._round_robin_counters[agent_type] + num_agents
+            ) % len(agents)
+
             return selected_agents
-            
+
         except Exception as e:
             self.logger.error("Round robin selection failed", error=str(e))
             return agents[:min_agents] if agents else []
+
+        finally:
+            if lock_acquired and self._state_manager:
+                await self._state_manager.release_lock(lock_key)
     
     async def _least_connections_selection(
         self, 
@@ -342,26 +367,43 @@ class AgentCoordinator:
         Returns:
             List of processing results from all agents
         """
+        lock_key = "coordinator:transactions"
+        lock_acquired = False
+
         try:
             transaction_id = transaction.id
-            
+
+            # Acquire distributed lock before mutating coordination state
+            if self._state_manager:
+                lock_acquired = await self._state_manager.acquire_lock(lock_key, ttl=10)
+                if not lock_acquired:
+                    self.logger.warning(
+                        "Could not acquire transaction-coordination lock — proceeding without lock",
+                        transaction_id=transaction_id,
+                    )
+
             # Record transaction assignment
             self._active_transactions[transaction_id] = [agent.agent_id for agent in agents]
             for agent in agents:
                 if agent.agent_id not in self._agent_transactions:
                     self._agent_transactions[agent.agent_id] = []
                 self._agent_transactions[agent.agent_id].append(transaction_id)
-            
+
+            # Release the lock before the (potentially long-running) agent calls
+            if lock_acquired and self._state_manager:
+                await self._state_manager.release_lock(lock_key)
+                lock_acquired = False
+
             self.logger.info(
                 "Coordinating transaction",
                 transaction_id=transaction_id,
-                agent_count=len(agents)
+                agent_count=len(agents),
             )
-            
+
             # Process with all agents concurrently
             tasks = [agent.process_transaction_with_retry(transaction) for agent in agents]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             # Process results
             processed_results = []
             for i, result in enumerate(results):
@@ -369,44 +411,63 @@ class AgentCoordinator:
                     self.logger.error(
                         "Agent processing failed",
                         agent_id=agents[i].agent_id,
-                        error=str(result)
+                        error=str(result),
                     )
-                    # Create error result
                     error_result = ProcessingResult(
                         success=False,
                         transaction_id=transaction_id,
                         status="failed",
                         message=f"Agent processing failed: {str(result)}",
-                        error_code="AGENT_ERROR"
+                        error_code="AGENT_ERROR",
                     )
                     processed_results.append(error_result)
                 else:
                     processed_results.append(result)
-            
+
             # Clean up transaction assignment
             await self._cleanup_transaction_assignment(transaction_id)
-            
+
             return processed_results
-            
+
         except Exception as e:
             self.logger.error("Transaction coordination failed", error=str(e))
             return []
+
+        finally:
+            if lock_acquired and self._state_manager:
+                await self._state_manager.release_lock(lock_key)
     
     async def _cleanup_transaction_assignment(self, transaction_id: str) -> None:
-        """Clean up transaction assignment records"""
+        """Clean up transaction assignment records under a distributed lock."""
+        lock_key = "coordinator:transactions"
+        lock_acquired = False
+
         try:
+            if self._state_manager:
+                lock_acquired = await self._state_manager.acquire_lock(lock_key, ttl=5)
+                if not lock_acquired:
+                    self.logger.warning(
+                        "Could not acquire cleanup lock — proceeding without lock",
+                        transaction_id=transaction_id,
+                    )
+
             if transaction_id in self._active_transactions:
                 agent_ids = self._active_transactions[transaction_id]
                 for agent_id in agent_ids:
                     if agent_id in self._agent_transactions:
                         self._agent_transactions[agent_id] = [
-                            tx_id for tx_id in self._agent_transactions[agent_id] 
+                            tx_id
+                            for tx_id in self._agent_transactions[agent_id]
                             if tx_id != transaction_id
                         ]
                 del self._active_transactions[transaction_id]
-                
+
         except Exception as e:
             self.logger.error("Failed to cleanup transaction assignment", error=str(e))
+
+        finally:
+            if lock_acquired and self._state_manager:
+                await self._state_manager.release_lock(lock_key)
     
     async def get_coordination_metrics(self) -> Dict[str, Any]:
         """Get coordination metrics"""

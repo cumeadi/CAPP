@@ -59,5 +59,5 @@ async def trigger_sweep():
     """Manually trigger Smart Sweep for testing."""
     from applications.capp.capp.services.yield_service import YieldService
     service = YieldService()
-    await service.monitor_idle_funds()
+    await service.optimize_wallet("internal_hot_wallet")
     return {"status": "Sweep Triggered"}

@@ -114,6 +114,14 @@ class MetricsCollector:
             failed_count = await self.cache.hget("metrics:payments:failed", "count") or 0
             failed_volume = await self.cache.hget("metrics:payments:failed", "volume") or 0
             
+            # Cast to int before comparison (cache returns strings)
+            total_count = int(total_count)
+            total_volume = int(total_volume)
+            successful_count = int(successful_count)
+            successful_volume = int(successful_volume)
+            failed_count = int(failed_count)
+            failed_volume = int(failed_volume)
+
             # Calculate success rate
             success_rate = 0.0
             if total_count > 0:
@@ -127,12 +135,12 @@ class MetricsCollector:
                 avg_processing_time = sum(times) / len(times)
             
             return {
-                "total_count": int(total_count),
-                "total_volume": float(total_volume) / 100,  # Convert from cents
-                "successful_count": int(successful_count),
-                "successful_volume": float(successful_volume) / 100,
-                "failed_count": int(failed_count),
-                "failed_volume": float(failed_volume) / 100,
+                "total_count": total_count,
+                "total_volume": total_volume / 100,  # Convert from cents
+                "successful_count": successful_count,
+                "successful_volume": successful_volume / 100,
+                "failed_count": failed_count,
+                "failed_volume": failed_volume / 100,
                 "success_rate": success_rate,
                 "average_processing_time": avg_processing_time,
                 "time_period": time_period
@@ -289,4 +297,37 @@ class MetricsCollector:
             self.logger.info("Metrics reset", metric_type=metric_type)
             
         except Exception as e:
-            self.logger.error("Failed to reset metrics", error=str(e)) 
+            self.logger.error("Failed to reset metrics", error=str(e))
+
+    async def get_latency_percentiles(self) -> Dict:
+        """
+        Return P50, P95, and P99 latency (in seconds) from stored processing times.
+
+        Returns:
+            Dict with keys p50, p95, p99 (all float, 0.0 when no data).
+        """
+        try:
+            raw = await self.cache.lrange("metrics:processing_times", 0, -1)
+            if not raw:
+                return {"p50": 0.0, "p95": 0.0, "p99": 0.0}
+
+            times = sorted(float(t) for t in raw)
+            n = len(times)
+
+            def _percentile(sorted_data: list, pct: float) -> float:
+                idx = (pct / 100.0) * (len(sorted_data) - 1)
+                lower = int(idx)
+                upper = min(lower + 1, len(sorted_data) - 1)
+                fraction = idx - lower
+                return sorted_data[lower] + fraction * (sorted_data[upper] - sorted_data[lower])
+
+            return {
+                "p50": round(_percentile(times, 50), 6),
+                "p95": round(_percentile(times, 95), 6),
+                "p99": round(_percentile(times, 99), 6),
+                "sample_count": n,
+            }
+
+        except Exception as e:
+            self.logger.error("Failed to compute latency percentiles", error=str(e))
+            return {"p50": 0.0, "p95": 0.0, "p99": 0.0}

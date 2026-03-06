@@ -1,0 +1,118 @@
+# Gitleaks configuration for CAPP
+# Docs: https://github.com/gitleaks/gitleaks#configuration
+# Version: 8.x
+
+title = "CAPP Gitleaks Configuration"
+
+[extend]
+# Inherit all rules from the upstream gitleaks default ruleset.
+useDefault = true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GLOBAL ALLOWLIST
+# Patterns here are applied across every rule. A finding is suppressed
+# when its secret value OR the surrounding line matches an allowlist entry.
+# ─────────────────────────────────────────────────────────────────────────────
+[allowlist]
+description = "Known safe patterns — placeholders, test data, and public identifiers"
+
+# Suppress any finding whose matched secret literally contains one of these
+# strings. These are explicit placeholder values, not real credentials.
+regexes = [
+    # Generic .env.example / README placeholders
+    '''your[-_].*[-_](key|secret|password|token|passkey|credential)''',
+    '''<your[-_\s].*>''',
+    '''CHANGE[_-]?ME''',
+    '''CHANGE[_-]?THIS''',
+    '''REPLACE[_-]?ME''',
+    '''example[-_]?(key|secret|token)''',
+    '''placeholder''',
+    # Our own REDACTED sentinels placed by the history rewrite
+    '''REDACTED_[A-Z_]+''',
+    # Public blockchain addresses (not secrets — 0x + 64 hex without leading zeros
+    # in a known account-address context)
+    '''0xc5792271815152a5146c929a73bb681347087617b4c8033099902613ce4745c9''',
+    '''0x441e8bb7cf5952ffa3886dd5030a913d7b02d3606c9719b75ed55d880c53b06a''',
+]
+
+# Suppress findings in these paths entirely.
+# These are test fixtures, example files, and generated lock files that
+# intentionally contain fake/placeholder credentials.
+paths = [
+    # Lock files — no real secrets, just package hashes
+    '''package-lock\.json''',
+    '''yarn\.lock''',
+    '''poetry\.lock''',
+    # Example / template files — intentionally contain placeholder values
+    '''\.env\.example''',
+    '''\.env\.template''',
+    '''env\.example''',
+    # Gitleaks config itself (suppress the regex patterns we define here)
+    '''\.gitleaks\.toml''',
+    # Documentation
+    '''docs/.*''',
+    '''.*\.md''',
+    # Test fixtures — use deterministic fake credentials
+    '''tests/.*''',
+    '''test_.*\.py''',
+    '''.*_test\.py''',
+    '''.*\.test\.(ts|js|tsx|jsx)''',
+    '''.*\.spec\.(ts|js|tsx|jsx)''',
+    # Recipe / example scripts — demonstrative code only
+    '''capp-recipes/.*''',
+    '''examples/.*''',
+    '''sdk/examples/.*''',
+]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CUSTOM RULES (supplement the defaults)
+# ─────────────────────────────────────────────────────────────────────────────
+
+[[rules]]
+id          = "capp-alchemy-key"
+description = "Alchemy API Key hardcoded as os.getenv() default"
+# Flags the pattern: os.getenv("...", "SOME_VALUE") where the default looks
+# like a real Alchemy key (alphanumeric, 20–30 chars, not a placeholder).
+regex       = '''os\.getenv\([^,]+,\s*["'][A-Za-z0-9_\-]{15,40}["']\)'''
+tags        = ["api-key", "alchemy"]
+
+  [rules.allowlist]
+  regexes = [
+    # Allow obvious placeholders used as defaults
+    '''your[-_]''',
+    '''CHANGE''',
+    '''REDACTED''',
+    '''demo''',
+    '''test''',
+    '''example''',
+  ]
+
+[[rules]]
+id          = "capp-hardcoded-db-password"
+description = "PostgreSQL connection string with literal password"
+regex       = '''postgresql(\+asyncpg)?://[^:]+:[^@\$\{]{6,}@'''
+tags        = ["database", "password"]
+
+  [rules.allowlist]
+  regexes = [
+    # Allow environment variable interpolation forms
+    '''\$\{[A-Z_]+\}''',
+    '''\$[A-Z_]+''',
+    # Allow obvious placeholders
+    '''your[-_]password''',
+    '''password@localhost''',
+    '''user:password@''',
+  ]
+
+[[rules]]
+id          = "capp-private-key-env-default"
+description = "Blockchain private key committed as Field() default value"
+# Detects: Field(default="0x...", ...) or Field(default="demo-private-key", ...)
+regex       = '''Field\(\s*default=["'](0x[0-9a-fA-F]{10,}|[a-f0-9]{60,})["']'''
+tags        = ["private-key", "blockchain"]
+
+[[rules]]
+id          = "capp-transak-key"
+description = "Transak on-ramp API key hardcoded as JS/TS fallback"
+regex       = '''(NEXT_PUBLIC_TRANSAK_API_KEY\s*\|\|\s*['"])[0-9a-f\-]{30,}(['"])'''
+tags        = ["api-key", "transak", "frontend"]

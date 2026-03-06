@@ -7,10 +7,15 @@ extracting the payment-specific orchestration logic from CAPP into a reusable pa
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Any, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Any, Union
 from decimal import Decimal
 from uuid import uuid4
 import structlog
+
+if TYPE_CHECKING:
+    # Imported only for type-checking; avoids the circular import at runtime
+    # (payment_step_executor imports PaymentWorkflowStep from this module).
+    from packages.core.orchestration.payment_step_executor import PaymentStepContext
 
 from pydantic import BaseModel, Field
 
@@ -78,12 +83,28 @@ class PaymentWorkflowResult(BaseModel):
     final_result: Optional[ProcessingResult] = None
     error_code: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    
+
     # Payment-specific fields
     transaction_hash: Optional[str] = None
     estimated_delivery_time: Optional[datetime] = None
     fees_charged: Optional[Decimal] = None
     exchange_rate_used: Optional[Decimal] = None
+
+
+class RollbackResult(BaseModel):
+    """
+    Result of a payment rollback (compensating-transaction) attempt.
+
+    ``rolled_back_steps`` contains step IDs whose compensating transaction
+    succeeded.  ``failed_rollbacks`` contains step IDs where the compensating
+    transaction itself failed (requiring manual intervention).
+    """
+    success: bool
+    payment_id: str
+    message: str
+    rolled_back_steps: List[str] = Field(default_factory=list)
+    failed_rollbacks: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class PaymentWorkflowOrchestrator:
@@ -399,4 +420,110 @@ class PaymentWorkflowOrchestrator:
             return None
         except Exception as e:
             self.logger.error(f"Failed to get workflow status for {payment_id}: {str(e)}")
-            return None 
+            return None
+
+    # ------------------------------------------------------------------
+    # Compensating-transaction orchestration (saga rollback)
+    # ------------------------------------------------------------------
+
+    async def rollback_payment(
+        self,
+        payment_id: str,
+        completed_steps: List[str],
+        context: "PaymentStepContext",
+        agents: List[BaseFinancialAgent],
+    ) -> RollbackResult:
+        """
+        Execute compensating transactions for a failed or stuck payment.
+
+        Iterates *completed_steps* in **reverse order** (saga pattern) and
+        calls each step's ``rollback()`` coroutine.  Every rollback result is
+        collected independently — a failure in one step does NOT abort the
+        remaining rollbacks.
+
+        Args:
+            payment_id:      Payment identifier (used for logging / result).
+            completed_steps: Ordered list of step IDs that were completed and
+                             must now be undone (pass forward-order; method
+                             reverses internally).
+            context:         PaymentStepContext containing payment data and
+                             accumulated step results.
+            agents:          Agents available to the rollback handlers (may be
+                             empty; each executor falls back gracefully).
+
+        Returns:
+            RollbackResult: Aggregate outcome with per-step success/failure lists.
+        """
+        # Local import avoids circular dependency:
+        # payment_step_executor → payment_workflow_orchestrator (PaymentWorkflowStep)
+        # payment_workflow_orchestrator → payment_step_executor (STEP_EXECUTORS)
+        from packages.core.orchestration.payment_step_executor import STEP_EXECUTORS
+
+        self.logger.warning(
+            "Starting payment rollback",
+            payment_id=payment_id,
+            steps_to_rollback=list(reversed(completed_steps)),
+        )
+
+        rolled_back: List[str] = []
+        failed: List[str] = []
+
+        for step_id in reversed(completed_steps):
+            executor = STEP_EXECUTORS.get(step_id)
+            if executor is None:
+                self.logger.warning(
+                    "No executor found for rollback step — skipping",
+                    payment_id=payment_id,
+                    step_id=step_id,
+                )
+                continue
+
+            try:
+                step_result = await executor.rollback(context, agents)
+                if step_result.success:
+                    rolled_back.append(step_id)
+                    self.logger.info(
+                        "Step rollback succeeded",
+                        payment_id=payment_id,
+                        step_id=step_id,
+                    )
+                else:
+                    failed.append(step_id)
+                    self.logger.error(
+                        "Step rollback failed",
+                        payment_id=payment_id,
+                        step_id=step_id,
+                        error_code=step_result.error_code,
+                        message=step_result.message,
+                    )
+            except Exception as e:
+                failed.append(step_id)
+                self.logger.error(
+                    "Unexpected error during step rollback",
+                    payment_id=payment_id,
+                    step_id=step_id,
+                    error=str(e),
+                    exc_info=True,
+                )
+
+        overall_success = len(failed) == 0
+        summary_msg = (
+            f"Rollback completed: {len(rolled_back)} step(s) reversed, "
+            f"{len(failed)} step(s) failed"
+        )
+
+        self.logger.info(
+            "Payment rollback finished",
+            payment_id=payment_id,
+            success=overall_success,
+            rolled_back_steps=rolled_back,
+            failed_rollbacks=failed,
+        )
+
+        return RollbackResult(
+            success=overall_success,
+            payment_id=payment_id,
+            message=summary_msg,
+            rolled_back_steps=rolled_back,
+            failed_rollbacks=failed,
+        ) 

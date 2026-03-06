@@ -8,7 +8,7 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -82,9 +82,9 @@ class PaymentStatusResponse(BaseModel):
 @router.post("/create", response_model=PaymentResponse)
 async def create_payment(
     request: CreatePaymentRequest,
+    fastapi_request: Request,
     payment_service: PaymentService = Depends(),
     current_user: User = Depends(get_current_active_user),
-    fastapi_request: Request = Depends() # Added fastapi_request
 ):
     """
     Create a new cross-border payment

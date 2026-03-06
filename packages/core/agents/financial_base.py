@@ -8,7 +8,7 @@ with domain-specific validation, compliance checking, and financial metrics.
 from abc import abstractmethod
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Dict, List, Optional, Any, Union
+from typing import Callable, Awaitable, Dict, List, Optional, Any, Union
 from enum import Enum
 
 import structlog
@@ -110,10 +110,128 @@ class FinancialAgentConfig(AgentConfig):
     settlement_timeout: float = 60.0
 
 
+# ---------------------------------------------------------------------------
+# Loader type aliases
+# ---------------------------------------------------------------------------
+
+# FeeLoader: returns (base_fee, amount_fee_pct, compliance_surcharge) as Decimals
+# for the given (transaction_type, compliance_level).
+FeeLoader = Callable[
+    [str, str],
+    Awaitable[tuple],  # (Decimal base_fee, Decimal amount_fee_pct, Decimal surcharge)
+]
+
+# RiskLoader: returns a list of (rule_type, condition_value, risk_increment) rows.
+RiskLoader = Callable[[], Awaitable[List[Dict[str, Any]]]]
+
+# ---------------------------------------------------------------------------
+# Default (hardcoded) fee and risk data — preserved as fallback
+# ---------------------------------------------------------------------------
+
+async def _default_fee_loader(transaction_type: str, compliance_level: str) -> tuple:
+    """Fallback fee schedule matching original financial_base.py constants."""
+    base_fee = Decimal('0.01')
+    amount_fee_pct = Decimal('0.005')
+    surcharge = Decimal('0')
+    if compliance_level == 'critical':
+        surcharge = Decimal('5.00')
+    elif compliance_level == 'high':
+        surcharge = Decimal('2.00')
+    return base_fee, amount_fee_pct, surcharge
+
+
+async def _default_risk_loader() -> List[Dict[str, Any]]:
+    """Fallback risk rules matching original financial_base.py constants."""
+    return [
+        {"rule_type": "base",              "condition_value": None,       "risk_increment": 0.1},
+        {"rule_type": "amount_threshold",  "condition_value": "10000",    "risk_increment": 0.2},
+        {"rule_type": "amount_threshold",  "condition_value": "1000",     "risk_increment": 0.1},
+        {"rule_type": "compliance_level",  "condition_value": "critical", "risk_increment": 0.3},
+        {"rule_type": "compliance_level",  "condition_value": "high",     "risk_increment": 0.2},
+    ]
+
+
+def make_db_fee_loader(db_session_factory: Callable) -> FeeLoader:
+    """
+    Factory that returns a FeeLoader backed by the fee_schedules table.
+
+    Args:
+        db_session_factory: Zero-argument callable returning a SQLAlchemy Session.
+    """
+    async def _loader(transaction_type: str, compliance_level: str) -> tuple:
+        try:
+            db = db_session_factory()
+            try:
+                from sqlalchemy import text
+                row = db.execute(
+                    text(
+                        "SELECT base_fee, amount_fee_pct, compliance_surcharge "
+                        "FROM fee_schedules "
+                        "WHERE transaction_type IN (:tx_type, 'default') "
+                        "  AND compliance_level = :level "
+                        "  AND is_active = true "
+                        "ORDER BY CASE WHEN transaction_type = :tx_type THEN 0 ELSE 1 END "
+                        "LIMIT 1"
+                    ),
+                    {"tx_type": transaction_type, "level": compliance_level},
+                ).fetchone()
+                if row:
+                    return Decimal(str(row[0])), Decimal(str(row[1])), Decimal(str(row[2]))
+            finally:
+                db.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "DB fee schedule lookup failed — using defaults",
+                error=str(exc),
+            )
+        return await _default_fee_loader(transaction_type, compliance_level)
+
+    return _loader
+
+
+def make_db_risk_loader(db_session_factory: Callable) -> RiskLoader:
+    """
+    Factory that returns a RiskLoader backed by the risk_rules table.
+
+    Args:
+        db_session_factory: Zero-argument callable returning a SQLAlchemy Session.
+    """
+    async def _loader() -> List[Dict[str, Any]]:
+        try:
+            db = db_session_factory()
+            try:
+                from sqlalchemy import text
+                rows = db.execute(
+                    text(
+                        "SELECT rule_type, condition_value, risk_increment "
+                        "FROM risk_rules "
+                        "WHERE is_active = true"
+                    )
+                ).fetchall()
+                return [
+                    {
+                        "rule_type": r[0],
+                        "condition_value": r[1],
+                        "risk_increment": float(r[2]),
+                    }
+                    for r in rows
+                ]
+            finally:
+                db.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "DB risk rules lookup failed — using defaults",
+                error=str(exc),
+            )
+        return await _default_risk_loader()
+
+    return _loader
+
+
 class BaseFinancialAgent(BaseFinancialAgent[FinancialTransaction]):
     """
     Base class for financial agents with domain-specific functionality
-    
+
     Extends the generic base agent with financial domain knowledge:
     - Amount validation
     - Currency validation
@@ -121,11 +239,18 @@ class BaseFinancialAgent(BaseFinancialAgent[FinancialTransaction]):
     - Risk assessment
     - Financial metrics
     """
-    
-    def __init__(self, config: FinancialAgentConfig):
+
+    def __init__(
+        self,
+        config: FinancialAgentConfig,
+        fee_loader: Optional[FeeLoader] = None,
+        risk_loader: Optional[RiskLoader] = None,
+    ):
         super().__init__(config)
         self.financial_config = config
         self.logger = structlog.get_logger(f"financial.{self.agent_type}.{self.agent_id}")
+        self._fee_loader: FeeLoader = fee_loader or _default_fee_loader
+        self._risk_loader: RiskLoader = risk_loader or _default_risk_loader
     
     async def validate_transaction(self, transaction: FinancialTransaction) -> bool:
         """
@@ -253,24 +378,31 @@ class BaseFinancialAgent(BaseFinancialAgent[FinancialTransaction]):
             float: Risk score between 0 and 1
         """
         try:
-            # Base risk assessment - can be overridden by specific agents
-            base_risk = 0.1
-            
-            # Amount-based risk
-            if transaction.amount > Decimal('10000'):
-                base_risk += 0.2
-            elif transaction.amount > Decimal('1000'):
-                base_risk += 0.1
-            
-            # Compliance-based risk
-            if transaction.compliance_level == ComplianceLevel.CRITICAL:
-                base_risk += 0.3
-            elif transaction.compliance_level == ComplianceLevel.HIGH:
-                base_risk += 0.2
-            
+            rules = await self._risk_loader()
+            base_risk = 0.0
+            compliance_str = transaction.compliance_level.value
+
+            for rule in rules:
+                rtype = rule.get("rule_type", "")
+                condition = rule.get("condition_value")
+                increment = float(rule.get("risk_increment", 0))
+
+                if rtype == "base":
+                    base_risk += increment
+                elif rtype == "amount_threshold" and condition is not None:
+                    threshold = Decimal(str(condition))
+                    # Only the highest-matching threshold contributes.
+                    # Rules are ordered high→low by convention (as seeded).
+                    if transaction.amount > threshold:
+                        base_risk += increment
+                        break  # stop after first matching amount threshold
+                elif rtype == "compliance_level" and condition is not None:
+                    if compliance_str == condition:
+                        base_risk += increment
+
             # Ensure risk score is between 0 and 1
             return min(max(base_risk, 0.0), 1.0)
-            
+
         except Exception as e:
             self.logger.error("Risk assessment failed", error=str(e))
             return 1.0  # Return high risk on error
@@ -286,23 +418,17 @@ class BaseFinancialAgent(BaseFinancialAgent[FinancialTransaction]):
             Decimal: Calculated fees
         """
         try:
-            # Base fee calculation - can be overridden by specific agents
-            base_fee = Decimal('0.01')  # 1% base fee
-            
-            # Amount-based fee
-            amount_fee = transaction.amount * Decimal('0.005')  # 0.5% of amount
-            
-            # Compliance-based fee
-            compliance_fee = Decimal('0')
-            if transaction.compliance_level == ComplianceLevel.CRITICAL:
-                compliance_fee = Decimal('5.00')
-            elif transaction.compliance_level == ComplianceLevel.HIGH:
-                compliance_fee = Decimal('2.00')
-            
-            total_fee = base_fee + amount_fee + compliance_fee
-            
+            tx_type = transaction.transaction_type.value
+            compliance_str = transaction.compliance_level.value
+
+            base_fee, amount_fee_pct, compliance_surcharge = await self._fee_loader(
+                tx_type, compliance_str
+            )
+
+            amount_fee = transaction.amount * amount_fee_pct
+            total_fee = base_fee + amount_fee + compliance_surcharge
             return total_fee
-            
+
         except Exception as e:
             self.logger.error("Fee calculation failed", error=str(e))
             return Decimal('0')

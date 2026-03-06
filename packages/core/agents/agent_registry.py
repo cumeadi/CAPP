@@ -191,7 +191,7 @@ class AgentRegistry:
         
         return list(matching_agents)
     
-    def create_agent(self, agent_type: str, config: AgentConfig) -> BaseFinancialAgent:
+    async def create_agent(self, agent_type: str, config: AgentConfig) -> BaseFinancialAgent:
         """
         Create an agent instance
         

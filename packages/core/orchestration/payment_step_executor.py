@@ -7,7 +7,7 @@ extracting the step-specific logic from CAPP into reusable components.
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Any, Union
+from typing import Callable, Awaitable, Dict, List, Optional, Any, Union, Tuple
 from decimal import Decimal
 import structlog
 
@@ -38,7 +38,11 @@ class PaymentStepResult(BaseModel):
     message: str
     data: Dict[str, Any] = Field(default_factory=dict)
     error_code: Optional[str] = None
-    processing_time: float
+    # Default 0.0: _execute_step() / _rollback_step() implementations are
+    # internal hooks and are not responsible for timing themselves.  The
+    # public execute() and rollback() wrappers always overwrite this with
+    # the real wall-clock elapsed time before returning to callers.
+    processing_time: float = 0.0
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -122,12 +126,97 @@ class PaymentStepExecutor:
             )
     
     async def _execute_step(
-        self, 
+        self,
         context: PaymentStepContext,
         agents: List[BaseFinancialAgent]
     ) -> PaymentStepResult:
         """Execute step-specific logic - to be implemented by subclasses"""
         raise NotImplementedError("Subclasses must implement _execute_step")
+
+    # ------------------------------------------------------------------
+    # Compensating-transaction (rollback / saga) interface
+    # ------------------------------------------------------------------
+
+    async def rollback(
+        self,
+        context: PaymentStepContext,
+        agents: List[BaseFinancialAgent],
+    ) -> PaymentStepResult:
+        """
+        Execute the compensating transaction for this step.
+
+        Called by the orchestrator in *reverse* step order when a payment
+        must be rolled back (saga pattern).  Mirrors the execute() contract:
+        logs the attempt, delegates to _rollback_step(), wraps timing, and
+        catches all exceptions so a single failed rollback never aborts the
+        wider rollback chain.
+        """
+        start_time = datetime.now(timezone.utc)
+        try:
+            self.logger.info(
+                f"Rolling back payment step: {self.step_name}",
+                payment_id=context.payment_id,
+                step_id=self.step_id,
+            )
+
+            result = await self._rollback_step(context, agents)
+            processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
+
+            self.logger.info(
+                f"Payment step rollback completed: {self.step_name}",
+                payment_id=context.payment_id,
+                step_id=self.step_id,
+                success=result.success,
+                processing_time=processing_time,
+            )
+
+            return PaymentStepResult(
+                success=result.success,
+                step_id=self.step_id,
+                message=result.message,
+                data=result.data,
+                error_code=result.error_code,
+                processing_time=processing_time,
+                metadata=result.metadata,
+            )
+
+        except Exception as e:
+            processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
+
+            self.logger.error(
+                f"Payment step rollback failed: {self.step_name}",
+                payment_id=context.payment_id,
+                step_id=self.step_id,
+                error=str(e),
+                exc_info=True,
+            )
+
+            return PaymentStepResult(
+                success=False,
+                step_id=self.step_id,
+                message=f"Step rollback failed: {str(e)}",
+                error_code="ROLLBACK_ERROR",
+                processing_time=processing_time,
+            )
+
+    async def _rollback_step(
+        self,
+        context: PaymentStepContext,
+        agents: List[BaseFinancialAgent],
+    ) -> PaymentStepResult:
+        """
+        Execute step-specific compensating logic.
+
+        Default is a no-op (idempotent / read-only steps need no undo).
+        Subclasses with externally-visible side effects (liquidity locks,
+        MMO calls, on-chain transactions) must override this method.
+        """
+        return PaymentStepResult(
+            success=True,
+            step_id=self.step_id,
+            message=f"No compensating action required for {self.step_name}",
+            processing_time=0.0,
+        )
 
 
 class CreatePaymentStepExecutor(PaymentStepExecutor):
@@ -185,7 +274,7 @@ class CreatePaymentStepExecutor(PaymentStepExecutor):
                 data={"payment": payment_data},
                 metadata={"payment_id": payment_request["reference_id"]}
             )
-            
+
         except Exception as e:
             return PaymentStepResult(
                 success=False,
@@ -194,12 +283,95 @@ class CreatePaymentStepExecutor(PaymentStepExecutor):
                 error_code="PAYMENT_CREATION_FAILED"
             )
 
+    async def _rollback_step(
+        self,
+        context: PaymentStepContext,
+        agents: List[BaseFinancialAgent],
+    ) -> PaymentStepResult:
+        """
+        Compensating action: mark payment as cancelled.
+        No external systems were touched at creation time, so this is
+        a local state update only.
+        """
+        return PaymentStepResult(
+            success=True,
+            step_id=self.step_id,
+            message="Payment creation rolled back: payment marked as cancelled",
+            data={"payment_status": "cancelled"},
+            processing_time=0.0,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Default corridor list — kept here as a fallback so tests and environments
+# without a DB connection continue to work.  The canonical source of truth is
+# the payment_routes table (migration 0001).  Inject a corridor_loader to
+# override this default (see make_db_corridor_loader below).
+# ---------------------------------------------------------------------------
+_DEFAULT_CORRIDORS: List[Tuple[str, str]] = [
+    ("US", "KE"), ("KE", "US"), ("US", "NG"), ("NG", "US"),
+    ("GB", "KE"), ("KE", "GB"), ("GB", "NG"), ("NG", "GB"),
+]
+
+CorridorLoader = Callable[[], Awaitable[List[Tuple[str, str]]]]
+
+
+async def _default_corridor_loader() -> List[Tuple[str, str]]:
+    """Return the hardcoded fallback corridor list."""
+    return _DEFAULT_CORRIDORS
+
+
+def make_db_corridor_loader(db_session_factory: Callable) -> CorridorLoader:
+    """
+    Factory that returns a CorridorLoader which queries the payment_routes table.
+
+    Args:
+        db_session_factory: A zero-argument callable that returns a SQLAlchemy
+            Session (or async-compatible equivalent).  Typically ``SessionLocal``
+            from apps/api/app/database.py.
+
+    Usage::
+
+        from apps.api.app.database import SessionLocal
+        executor = ValidatePaymentStepExecutor(
+            corridor_loader=make_db_corridor_loader(SessionLocal)
+        )
+    """
+    async def _loader() -> List[Tuple[str, str]]:
+        try:
+            db = db_session_factory()
+            try:
+                from sqlalchemy import text
+                rows = db.execute(
+                    text(
+                        "SELECT from_country, to_country "
+                        "FROM payment_routes "
+                        "WHERE is_active = true"
+                    )
+                ).fetchall()
+                return [(r[0], r[1]) for r in rows]
+            finally:
+                db.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "DB corridor lookup failed — falling back to defaults",
+                error=str(exc),
+            )
+            return _DEFAULT_CORRIDORS
+
+    return _loader
+
 
 class ValidatePaymentStepExecutor(PaymentStepExecutor):
     """Executor for payment validation step"""
-    
-    def __init__(self):
+
+    def __init__(
+        self,
+        corridor_loader: Optional[CorridorLoader] = None,
+    ):
         super().__init__(PaymentWorkflowStep.VALIDATE_PAYMENT, "Validate Payment")
+        # Use provided loader, or fall back to hardcoded defaults.
+        self._corridor_loader: CorridorLoader = corridor_loader or _default_corridor_loader
     
     async def _execute_step(
         self, 
@@ -245,12 +417,9 @@ class ValidatePaymentStepExecutor(PaymentStepExecutor):
             sender_country = payment_data.get("sender", {}).get("country")
             recipient_country = payment_data.get("recipient", {}).get("country")
             
-            # Check if corridor is supported
-            supported_corridors = [
-                ("US", "KE"), ("KE", "US"), ("US", "NG"), ("NG", "US"),
-                ("GB", "KE"), ("KE", "GB"), ("GB", "NG"), ("NG", "GB")
-            ]
-            
+            # Load supported corridors from DB (or fallback to defaults).
+            supported_corridors = await self._corridor_loader()
+
             corridor = (sender_country, recipient_country)
             if corridor not in supported_corridors:
                 return PaymentStepResult(
@@ -350,7 +519,7 @@ class OptimizeRouteStepExecutor(PaymentStepExecutor):
                 data={"route": route_data},
                 metadata={"selected_route": route_data}
             )
-            
+
         except Exception as e:
             return PaymentStepResult(
                 success=False,
@@ -358,6 +527,46 @@ class OptimizeRouteStepExecutor(PaymentStepExecutor):
                 message=f"Route optimization failed: {str(e)}",
                 error_code="ROUTE_OPTIMIZATION_ERROR"
             )
+
+    async def _rollback_step(
+        self,
+        context: PaymentStepContext,
+        agents: List[BaseFinancialAgent],
+    ) -> PaymentStepResult:
+        """
+        Compensating action: release any reserved route slot.
+        Sends a route_release transaction to the route_optimization agent.
+        """
+        route_agent = next(
+            (a for a in agents if a.agent_type == "route_optimization"), None
+        )
+        if not route_agent:
+            return PaymentStepResult(
+                success=True,
+                step_id=self.step_id,
+                message="Route rollback skipped: no route_optimization agent available",
+                processing_time=0.0,
+            )
+
+        transaction = FinancialTransaction(
+            transaction_id=context.payment_id,
+            transaction_type="route_release",
+            amount=0,
+            currency="USD",
+            metadata={"payment_id": context.payment_id, "step_id": self.step_id},
+        )
+        result = await route_agent.process_transaction(transaction)
+        return PaymentStepResult(
+            success=result.success,
+            step_id=self.step_id,
+            message=(
+                "Route reservation released"
+                if result.success
+                else f"Route release failed: {result.message}"
+            ),
+            error_code=None if result.success else "ROUTE_RELEASE_FAILED",
+            processing_time=0.0,
+        )
 
 
 class ValidateComplianceStepExecutor(PaymentStepExecutor):
@@ -510,7 +719,7 @@ class CheckLiquidityStepExecutor(PaymentStepExecutor):
                 data={"liquidity_available": True},
                 metadata={"liquidity_result": result.metadata}
             )
-            
+
         except Exception as e:
             return PaymentStepResult(
                 success=False,
@@ -518,6 +727,46 @@ class CheckLiquidityStepExecutor(PaymentStepExecutor):
                 message=f"Liquidity check failed: {str(e)}",
                 error_code="LIQUIDITY_CHECK_ERROR"
             )
+
+    async def _rollback_step(
+        self,
+        context: PaymentStepContext,
+        agents: List[BaseFinancialAgent],
+    ) -> PaymentStepResult:
+        """
+        Compensating action: release any liquidity reservation held for this payment.
+        Sends a liquidity_release transaction to the liquidity agent.
+        """
+        liquidity_agent = next(
+            (a for a in agents if a.agent_type == "liquidity"), None
+        )
+        if not liquidity_agent:
+            return PaymentStepResult(
+                success=True,
+                step_id=self.step_id,
+                message="Liquidity rollback skipped: no liquidity agent available",
+                processing_time=0.0,
+            )
+
+        transaction = FinancialTransaction(
+            transaction_id=context.payment_id,
+            transaction_type="liquidity_release",
+            amount=0,
+            currency="USD",
+            metadata={"payment_id": context.payment_id, "step_id": self.step_id},
+        )
+        result = await liquidity_agent.process_transaction(transaction)
+        return PaymentStepResult(
+            success=result.success,
+            step_id=self.step_id,
+            message=(
+                "Liquidity reservation released"
+                if result.success
+                else f"Liquidity release failed: {result.message}"
+            ),
+            error_code=None if result.success else "LIQUIDITY_RELEASE_FAILED",
+            processing_time=0.0,
+        )
 
 
 class LockExchangeRateStepExecutor(PaymentStepExecutor):
@@ -591,7 +840,7 @@ class LockExchangeRateStepExecutor(PaymentStepExecutor):
                 data={"exchange_rate_locked": True},
                 metadata={"exchange_rate_result": result.metadata}
             )
-            
+
         except Exception as e:
             return PaymentStepResult(
                 success=False,
@@ -599,6 +848,46 @@ class LockExchangeRateStepExecutor(PaymentStepExecutor):
                 message=f"Exchange rate locking failed: {str(e)}",
                 error_code="EXCHANGE_RATE_LOCK_ERROR"
             )
+
+    async def _rollback_step(
+        self,
+        context: PaymentStepContext,
+        agents: List[BaseFinancialAgent],
+    ) -> PaymentStepResult:
+        """
+        Compensating action: unlock the exchange rate held for this payment.
+        Sends an exchange_rate_unlock transaction to the exchange_rate agent.
+        """
+        exchange_agent = next(
+            (a for a in agents if a.agent_type == "exchange_rate"), None
+        )
+        if not exchange_agent:
+            return PaymentStepResult(
+                success=True,
+                step_id=self.step_id,
+                message="Exchange rate unlock skipped: no exchange_rate agent available",
+                processing_time=0.0,
+            )
+
+        transaction = FinancialTransaction(
+            transaction_id=context.payment_id,
+            transaction_type="exchange_rate_unlock",
+            amount=0,
+            currency="USD",
+            metadata={"payment_id": context.payment_id, "step_id": self.step_id},
+        )
+        result = await exchange_agent.process_transaction(transaction)
+        return PaymentStepResult(
+            success=result.success,
+            step_id=self.step_id,
+            message=(
+                "Exchange rate unlocked"
+                if result.success
+                else f"Exchange rate unlock failed: {result.message}"
+            ),
+            error_code=None if result.success else "EXCHANGE_RATE_UNLOCK_FAILED",
+            processing_time=0.0,
+        )
 
 
 class ExecuteMMOStepExecutor(PaymentStepExecutor):
@@ -671,7 +960,7 @@ class ExecuteMMOStepExecutor(PaymentStepExecutor):
                 data={"mmo_executed": True},
                 metadata={"mmo_result": result.metadata}
             )
-            
+
         except Exception as e:
             return PaymentStepResult(
                 success=False,
@@ -679,6 +968,48 @@ class ExecuteMMOStepExecutor(PaymentStepExecutor):
                 message=f"MMO execution failed: {str(e)}",
                 error_code="MMO_EXECUTION_ERROR"
             )
+
+    async def _rollback_step(
+        self,
+        context: PaymentStepContext,
+        agents: List[BaseFinancialAgent],
+    ) -> PaymentStepResult:
+        """
+        Compensating action: issue an MMO reversal for the payment.
+        This is a critical rollback — if no MMO agent is available the rollback
+        is marked as FAILED so the orchestrator can escalate (e.g., manual review).
+        """
+        mmo_agent = next(
+            (a for a in agents if a.agent_type == "mmo_service"), None
+        )
+        if not mmo_agent:
+            return PaymentStepResult(
+                success=False,
+                step_id=self.step_id,
+                message="MMO reversal failed: no mmo_service agent available — manual intervention required",
+                error_code="AGENT_NOT_AVAILABLE",
+                processing_time=0.0,
+            )
+
+        transaction = FinancialTransaction(
+            transaction_id=context.payment_id,
+            transaction_type="mmo_reversal",
+            amount=0,
+            currency="USD",
+            metadata={"payment_id": context.payment_id, "step_id": self.step_id},
+        )
+        result = await mmo_agent.process_transaction(transaction)
+        return PaymentStepResult(
+            success=result.success,
+            step_id=self.step_id,
+            message=(
+                "MMO payment reversed successfully"
+                if result.success
+                else f"MMO reversal failed: {result.message}"
+            ),
+            error_code=None if result.success else "MMO_REVERSAL_FAILED",
+            processing_time=0.0,
+        )
 
 
 class SettlePaymentStepExecutor(PaymentStepExecutor):
@@ -751,7 +1082,7 @@ class SettlePaymentStepExecutor(PaymentStepExecutor):
                 data={"settlement_completed": True},
                 metadata={"settlement_result": result.metadata}
             )
-            
+
         except Exception as e:
             return PaymentStepResult(
                 success=False,
@@ -759,6 +1090,49 @@ class SettlePaymentStepExecutor(PaymentStepExecutor):
                 message=f"Payment settlement failed: {str(e)}",
                 error_code="SETTLEMENT_ERROR"
             )
+
+    async def _rollback_step(
+        self,
+        context: PaymentStepContext,
+        agents: List[BaseFinancialAgent],
+    ) -> PaymentStepResult:
+        """
+        Compensating action: issue an on-chain refund transaction.
+        This is the highest-stakes rollback step — failure here requires
+        manual intervention and must be surfaced loudly.
+        """
+        settlement_agent = next(
+            (a for a in agents if a.agent_type == "settlement"), None
+        )
+        if not settlement_agent:
+            return PaymentStepResult(
+                success=False,
+                step_id=self.step_id,
+                message="On-chain refund failed: no settlement agent available — manual intervention required",
+                error_code="AGENT_NOT_AVAILABLE",
+                processing_time=0.0,
+            )
+
+        transaction = FinancialTransaction(
+            transaction_id=context.payment_id,
+            transaction_type="refund_settlement",
+            amount=0,
+            currency="USD",
+            metadata={"payment_id": context.payment_id, "step_id": self.step_id},
+        )
+        result = await settlement_agent.process_transaction(transaction)
+        return PaymentStepResult(
+            success=result.success,
+            step_id=self.step_id,
+            message=(
+                "On-chain refund transaction issued"
+                if result.success
+                else f"On-chain refund failed: {result.message}"
+            ),
+            error_code=None if result.success else "REFUND_SETTLEMENT_FAILED",
+            metadata=result.metadata if result.success else {},
+            processing_time=0.0,
+        )
 
 
 class ConfirmPaymentStepExecutor(PaymentStepExecutor):
@@ -824,6 +1198,25 @@ class ConfirmPaymentStepExecutor(PaymentStepExecutor):
                 message=f"Payment confirmation failed: {str(e)}",
                 error_code="CONFIRMATION_ERROR"
             )
+
+    async def _rollback_step(
+        self,
+        context: PaymentStepContext,
+        agents: List[BaseFinancialAgent],
+    ) -> PaymentStepResult:
+        """
+        Compensating action: reverse the confirmation and mark the payment
+        as refunded. This is a local state update — the actual on-chain refund
+        is handled by SettlePaymentStepExecutor._rollback_step(), which runs
+        before this step in the reverse-order rollback chain.
+        """
+        return PaymentStepResult(
+            success=True,
+            step_id=self.step_id,
+            message="Payment confirmation reversed: payment marked as refunded",
+            data={"payment_status": "refunded"},
+            processing_time=0.0,
+        )
 
 
 # Step executor registry

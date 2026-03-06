@@ -138,7 +138,7 @@ class AgentFactory:
                 )
             
             # Create agent instance
-            agent = self.agent_registry.create_agent(agent_type, config)
+            agent = await self.agent_registry.create_agent(agent_type, config)
             
             # Add to active agents
             self.active_agents[agent.agent_id] = agent

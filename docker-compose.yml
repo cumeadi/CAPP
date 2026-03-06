@@ -13,7 +13,7 @@ services:
       - "8000:8000"
     environment:
       - ENVIRONMENT=development
-      - DATABASE_URL=postgresql+asyncpg://capp_user:REDACTED_DB_PASSWORD@postgres:5432/capp_db
+      - DATABASE_URL=postgresql+asyncpg://capp_user:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/capp_db
       - REDIS_URL=redis://redis:6379
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - APTOS_NODE_URL=https://fullnode.mainnet.aptoslabs.com
@@ -37,7 +37,7 @@ services:
     environment:
       - POSTGRES_DB=capp_db
       - POSTGRES_USER=capp_user
-      - POSTGRES_PASSWORD=REDACTED_DB_PASSWORD
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     ports:
       - "5432:5432"
     volumes:
@@ -112,7 +112,7 @@ services:
       - DB=postgresql
       - DB_PORT=5432
       - POSTGRES_USER=capp_user
-      - POSTGRES_PWD=REDACTED_DB_PASSWORD
+      - POSTGRES_PWD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       - POSTGRES_SEEDS=postgres
       - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
     volumes:

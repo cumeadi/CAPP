@@ -1,6 +1,6 @@
 
 from decimal import Decimal
-from typing import List, Optional
+from typing import Optional
 import structlog
 from pydantic import BaseModel
 
@@ -30,12 +30,12 @@ class RoutingService:
             self.registry.register_payment_rail(create_cheap_rail())
 
     async def calculate_best_route(
-        self, 
-        amount: Decimal, 
-        currency: str, 
+        self,
+        amount: Decimal,
+        currency: str,
         destination: str,
         preferences: Optional[PaymentPreferences] = None
-    ) -> List[dict]:
+    ) -> Optional[dict]:
         """
         Query all rails, score results, and return the best route.
         """
@@ -63,12 +63,12 @@ class RoutingService:
                 logger.warning("quote_failed", rail=rail.config.name, error=str(e))
                 
         if not quotes:
-            return []
-            
+            return None
+
         # Sort by score (higher is better)
         quotes.sort(key=lambda x: x["score"], reverse=True)
-        
-        return quotes
+
+        return quotes[0]
 
     def _calculate_score(self, quote: dict, prefs: PaymentPreferences) -> float:
         """

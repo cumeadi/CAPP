@@ -173,7 +173,7 @@ class PaymentOrchestrationService:
                 "Payment orchestration completed successfully",
                 payment_id=payment.payment_id,
                 processing_time=processing_time,
-                total_cost=payment.total_cost
+                amount=payment.amount  # NOTE: total_cost was a bug (no such attribute)
             )
             
             return PaymentResult(
@@ -183,7 +183,7 @@ class PaymentOrchestrationService:
                 message="Payment processed successfully",
                 transaction_hash=settlement_result.transaction_hash,
                 estimated_delivery_time=payment.selected_route.estimated_delivery_time if payment.selected_route else None,
-                fees_charged=payment.fees,
+                fees_charged=payment.selected_route.fees if payment.selected_route else None,  # NOTE: payment has no fees field
                 exchange_rate_used=payment.exchange_rate
             )
             
@@ -297,7 +297,7 @@ class PaymentOrchestrationService:
             if not route_agents:
                 route_config = RouteOptimizationConfig()
                 route_agent = RouteOptimizationAgent(route_config)
-                agent_registry.create_agent("route_optimization", route_config)
+                await agent_registry.create_agent("route_optimization", route_config)
                 route_agents = [route_agent]
             
             route_agent = route_agents[0]

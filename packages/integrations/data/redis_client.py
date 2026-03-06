@@ -141,7 +141,7 @@ class RedisClient:
         except Exception as e:
             self.logger.error("Failed to disconnect from Redis", error=str(e))
     
-    def _get_client(self) -> Union[redis.Redis, MockRedisClient]:
+    def _get_client(self) -> Union[redis.Redis, "MockRedisClient"]:
         """Get the active Redis client"""
         if self._using_mock and self._mock_client:
             return self._mock_client
@@ -394,13 +394,33 @@ class RedisClient:
             self.logger.warning("Failed to get list length from Redis", key=key, error=str(e))
             return 0
     
+    async def setnx(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        """Set key only if it does not exist (SETNX). Returns True if the key was set."""
+        try:
+            client = self._get_client()
+            serialized_value = self._serialize(value)
+
+            if self._using_mock:
+                result = await client.setnx(key, serialized_value)
+                if result and ttl:
+                    await client.expire(key, ttl)
+                return bool(result)
+            else:
+                # Atomic SET NX EX — equivalent to SETNX + EXPIRE in one round-trip
+                result = await client.set(key, serialized_value, nx=True, ex=ttl)
+                return result is True
+
+        except Exception as e:
+            self.logger.warning("Failed to setnx in Redis", key=key, error=str(e))
+            return False
+
     async def lrange(self, key: str, start: int, end: int, format: SerializationFormat = None) -> List[Any]:
         """Get range from list"""
         try:
             client = self._get_client()
             values = await client.lrange(key, start, end)
             return [self._deserialize(value, format) for value in values]
-            
+
         except Exception as e:
             self.logger.warning("Failed to get range from list in Redis", key=key, error=str(e))
             return []
@@ -511,6 +531,13 @@ class MockRedisClient:
         self._data[key] = str(new_value)
         return new_value
     
+    async def setnx(self, key: str, value: str) -> bool:
+        """Mock setnx — atomic set-if-not-exists"""
+        if key not in self._data:
+            self._data[key] = value
+            return True
+        return False
+
     async def hget(self, key: str, field: str) -> Optional[str]:
         """Mock hget"""
         hash_key = f"{key}:{field}"

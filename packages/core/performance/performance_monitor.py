@@ -587,15 +587,63 @@ async def slack_notification_handler(channel: NotificationChannel, alert: Alert,
 
 
 async def webhook_notification_handler(channel: NotificationChannel, alert: Alert, rule: AlertRule) -> None:
-    """Default webhook notification handler"""
-    # This would send a webhook notification
-    # Implementation would depend on webhook configuration
-    logger.info(
-        "Webhook notification sent",
-        channel_id=channel.channel_id,
-        alert_id=alert.alert_id,
-        severity=alert.severity
-    )
+    """Send an alert notification via HTTP POST to the configured webhook URL."""
+    import aiohttp
+
+    webhook_url = channel.config.get("url")
+    if not webhook_url:
+        logger.warning(
+            "Webhook URL not configured, skipping delivery",
+            channel_id=channel.channel_id,
+        )
+        return
+
+    payload = {
+        "alert_id": alert.alert_id,
+        "rule_id": alert.rule_id,
+        "severity": alert.severity,
+        "status": alert.status,
+        "message": alert.message,
+        "metric_value": alert.metric_value,
+        "threshold": alert.threshold,
+        "triggered_at": alert.triggered_at.isoformat(),
+        "rule_name": rule.name,
+        "channel_id": channel.channel_id,
+    }
+
+    timeout = aiohttp.ClientTimeout(total=channel.config.get("timeout_seconds", 10))
+    headers = {"Content-Type": "application/json"}
+    secret = channel.config.get("secret")
+    if secret:
+        headers["X-Webhook-Secret"] = secret
+
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(webhook_url, json=payload, headers=headers) as response:
+                if response.status < 300:
+                    logger.info(
+                        "Webhook notification delivered",
+                        channel_id=channel.channel_id,
+                        alert_id=alert.alert_id,
+                        severity=alert.severity,
+                        http_status=response.status,
+                    )
+                else:
+                    body = await response.text()
+                    logger.error(
+                        "Webhook delivery failed",
+                        channel_id=channel.channel_id,
+                        alert_id=alert.alert_id,
+                        http_status=response.status,
+                        response_body=body[:200],
+                    )
+    except aiohttp.ClientError as exc:
+        logger.error(
+            "Webhook HTTP error",
+            channel_id=channel.channel_id,
+            alert_id=alert.alert_id,
+            error=str(exc),
+        )
 
 
 # Global performance monitor instance

@@ -18,6 +18,8 @@ from applications.capp.capp.core.database import (
     AgentActivity,
     ExchangeRate,
     ComplianceRecord,
+    Settlement,
+    Refund,
 )
 from applications.capp.capp.config.settings import get_settings
 

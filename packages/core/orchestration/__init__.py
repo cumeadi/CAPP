@@ -8,31 +8,34 @@ from .payment_orchestrator import PaymentOrchestrator
 from .flow_manager import FlowManager
 from .state_manager import StateManager
 from .payment_workflow_orchestrator import (
-    PaymentWorkflowOrchestrator, 
-    PaymentWorkflowConfig, 
+    PaymentWorkflowOrchestrator,
+    PaymentWorkflowConfig,
     PaymentWorkflowResult,
-    PaymentWorkflowStep
+    PaymentWorkflowStep,
+    RollbackResult,
 )
 from .payment_step_executor import (
     PaymentStepExecutor,
     PaymentStepContext,
     PaymentStepResult,
-    get_step_executor
+    get_step_executor,
 )
 from .payment_workflow_factory import (
     PaymentWorkflowFactory,
     WorkflowType,
-    WorkflowPreset
+    WorkflowPreset,
 )
+from .payment_watchdog import PaymentWatchdog
 
 __all__ = [
     "PaymentOrchestrator",
-    "FlowManager", 
+    "FlowManager",
     "StateManager",
     "PaymentWorkflowOrchestrator",
     "PaymentWorkflowConfig",
     "PaymentWorkflowResult",
     "PaymentWorkflowStep",
+    "RollbackResult",
     "PaymentStepExecutor",
     "PaymentStepContext",
     "PaymentStepResult",
@@ -40,4 +43,5 @@ __all__ = [
     "PaymentWorkflowFactory",
     "WorkflowType",
     "WorkflowPreset",
+    "PaymentWatchdog",
 ] 

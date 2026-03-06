@@ -25,6 +25,7 @@ from .. import state
 from applications.capp.capp.services.approval import get_approval_service
 from applications.capp.capp.config.settings import settings
 from applications.capp.capp.services.anomaly_detection import anomaly_detector
+from ..services.price_oracle import get_oracle
 
 router = APIRouter(
     prefix="/wallet",
@@ -215,7 +216,11 @@ async def send_transaction(request: schemas.TransactionRequest):
             from_currency=from_curr,
             to_currency=to_curr
         )
-        
+
+        # 2. Execute settlement — this is what produces the on-chain tx_hash.
+        #    SettlementAgent.execute_settlement() returns the transaction hash string.
+        tx_hash = await agent.execute_settlement(batch)
+
         # 3. Write to Payment Memory Layer
         db = SessionLocal()
         try:
@@ -252,58 +257,55 @@ async def send_transaction(request: schemas.TransactionRequest):
 async def get_wallet_stats():
     """
     Aggregate total value from all configured chains.
+    Asset prices are fetched from the PriceOracle (Redis-cached, upstream feed,
+    then hardcoded fallback). No prices are hardcoded in this function.
     """
     try:
+        oracle = get_oracle()
+        prices = await oracle.get_prices(["APT", "MATIC", "USDC", "ETH", "SOL", "XLM"])
+
         total_usd = 0.0
         hot_wallet = 0.0
         bal_sol = 0.0
         bal_xlm = 0.0
-        
+
         # 1. Aptos
         try:
             apt_client = get_aptos_client()
             apt_addr = settings.APTOS_ACCOUNT_ADDRESS
             if apt_addr and apt_addr != "demo-account-address":
-                # Assuming get_account_balance returns APT amount
                 bal_apt = await apt_client.get_account_balance(apt_addr)
-                # Mock APT Price $10 (Use Oracle or CMC in real prod)
-                total_usd += float(bal_apt) * 10.0
-                hot_wallet += float(bal_apt) * 10.0
+                apt_usd = float(bal_apt) * prices["APT"]
+                total_usd += apt_usd
+                hot_wallet += apt_usd
         except Exception as e:
             print(f"Stats Aptos Error: {e}")
 
         # 2. Polygon (EVM)
         try:
             poly_service = PolygonSettlementService()
-            # Use configured key's address or EVM Private Key derived address
-            # For this MVP, we use a hardcoded safe address or derive from key?
-            # Let's use a "System Address" if set, else skip
-            # We don't have a clean way to get address from Private Key here without web3 lib
-            # so we'll check if specific env var is set or use a dummy for now if missing.
-            # Ideally we should add EVM_ACCOUNT_ADDRESS to settings.
-            
             # Using a known address for demo or 0x0
             evm_address = "0x0"
             if settings.POLYGON_PRIVATE_KEY:
                  # In a real app we'd derive this. For now we assume the user funds the generated address
                  # We will use a hardcoded 0x0 unless we pass it in env.
                  # Actually, let's use the one we just generated if we can...
-                 # Ideally we add EVM_ACCOUNT_ADDRESS to settings. 
-                 # For now, we set to 0x0 to clear the fake 595k.
-                 pass 
-            
+                 # Ideally we add EVM_ACCOUNT_ADDRESS to settings.
+                 pass
+
             # MATIC
-            MATIC_PRICE = 0.85 
             bal_matic = await poly_service.get_account_balance(evm_address)
-            total_usd += bal_matic * MATIC_PRICE
-            hot_wallet += bal_matic * MATIC_PRICE
-            
-            # USDC
+            matic_usd = bal_matic * prices["MATIC"]
+            total_usd += matic_usd
+            hot_wallet += matic_usd
+
+            # USDC (price is ~1.0 but fetched from oracle for consistency)
             USDC_ADDR = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
             bal_usdc = await poly_service.get_token_balance(USDC_ADDR, evm_address)
-            total_usd += bal_usdc
-            hot_wallet += bal_usdc
-            
+            usdc_usd = bal_usdc * prices["USDC"]
+            total_usd += usdc_usd
+            hot_wallet += usdc_usd
+
         except Exception as e:
             print(f"Stats EVM Error: {e}")
 
@@ -311,12 +313,11 @@ async def get_wallet_stats():
         try:
             stark_client = get_starknet_client()
             if settings.STARKNET_ACCOUNT_ADDRESS != "0x0":
-                # Check ETH
                 ETH_CONTRACT = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
                 bal_eth = await stark_client.get_balance(ETH_CONTRACT)
-                ETH_PRICE = 2500.0
-                total_usd += float(bal_eth) * ETH_PRICE
-                hot_wallet += float(bal_eth) * ETH_PRICE
+                eth_usd = float(bal_eth) * prices["ETH"]
+                total_usd += eth_usd
+                hot_wallet += eth_usd
         except Exception as e:
              print(f"Stats Starknet Error: {e}")
 
@@ -324,9 +325,9 @@ async def get_wallet_stats():
         try:
             sol_client = get_solana_client()
             bal_sol = await sol_client.get_balance("default")
-            SOL_PRICE = 150.0
-            total_usd += float(bal_sol) * SOL_PRICE
-            hot_wallet += float(bal_sol) * SOL_PRICE
+            sol_usd = float(bal_sol) * prices["SOL"]
+            total_usd += sol_usd
+            hot_wallet += sol_usd
         except Exception as e:
              print(f"Stats Solana Error: {e}")
 
@@ -334,9 +335,9 @@ async def get_wallet_stats():
         try:
             xlm_client = get_stellar_client()
             bal_xlm = await xlm_client.get_balance("default")
-            XLM_PRICE = 0.12
-            total_usd += float(bal_xlm) * XLM_PRICE
-            hot_wallet += float(bal_xlm) * XLM_PRICE
+            xlm_usd = float(bal_xlm) * prices["XLM"]
+            total_usd += xlm_usd
+            hot_wallet += xlm_usd
         except Exception as e:
              print(f"Stats Stellar Error: {e}")
 

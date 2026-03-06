@@ -59,18 +59,27 @@ async def get_balance(address: str):
     """
     try:
         client = get_starknet_client()
-        
-        # Use the new get_balance_of helper for arbitrary addresses
+
+        # Guard: read-only clients (no credentials) cannot query balances
+        if not getattr(client, "account", None):
+            raise HTTPException(
+                status_code=503,
+                detail="Starknet RPC requires account credentials. Set STARKNET_ACCOUNT_ADDRESS and STARKNET_PRIVATE_KEY."
+            )
+
         balance_wei = await client.get_balance_of(address)
-        
+
         return {
             "address": address,
             "balance_wei": balance_wei,
-            "balance_eth": balance_wei / 1e18 # approximate
+            "balance_eth": balance_wei / 1e18
         }
+    except HTTPException:
+        raise
     except Exception as e:
+        status = 503 if "401" in str(e) or "authenticated" in str(e).lower() else 500
         logger.error("Failed to get balance", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=status, detail=str(e))
 
 @router.post("/transfer", response_model=schemas.TransactionResponse)
 async def transfer_funds(request: schemas.StarknetTransferRequest):

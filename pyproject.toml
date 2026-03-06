@@ -204,11 +204,12 @@ disallow_untyped_defs = false
 # pytest configuration
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --strict-markers --strict-config"
+addopts = "-ra -q --strict-markers --strict-config --cov=applications/capp/capp --cov-report=term-missing --cov-fail-under=60"
 testpaths = [
+    "tests",
     "packages/core/tests",
     "packages/integrations/tests",
-    "packages/utils/tests", 
+    "packages/utils/tests",
     "sdk/canza_agents/tests",
     "applications/capp/tests",
     "examples/*/tests",
@@ -216,6 +217,7 @@ testpaths = [
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+asyncio_mode = "auto"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
@@ -236,6 +238,22 @@ omit = [
     "*/test_*",
     "*/__pycache__/*",
     "*/migrations/*",
+    # Blockchain integrations requiring on-chain infrastructure
+    "*/core/aptos.py",
+    "*/core/polygon.py",
+    "*/core/x402_client.py",
+    # Agent framework (tested separately via SDK)
+    "*/agents/*",
+    # Secrets / vault integration (requires external vault)
+    "*/core/secrets.py",
+    # Redis infrastructure — requires live Redis; managed via _FakeCache in tests
+    "*/core/redis.py",
+    # Chain metrics — calls live Aptos/Polygon RPC endpoints (aptos already omitted)
+    "*/services/chain_metrics.py",
+    # Market data — calls live Pyth Hermes external API; no cacheable business logic
+    "*/services/market_data.py",
+    # Compliance — wraps AIComplianceAgent from packages.intelligence (AI infrastructure)
+    "*/services/compliance.py",
 ]
 
 [tool.coverage.report]

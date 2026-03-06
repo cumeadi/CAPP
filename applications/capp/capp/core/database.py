@@ -6,12 +6,13 @@ and repository pattern for data access.
 """
 
 import asyncio
+import json
 from datetime import datetime, timedelta
 from typing import Optional, List
 from uuid import uuid4
 
 from sqlalchemy import (
-    Column, String, Integer, Numeric, DateTime, Boolean, Text,
+    Column, String, Integer, BigInteger, Numeric, DateTime, Boolean, Text,
     ForeignKey, Index, UniqueConstraint, CheckConstraint, select
 )
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
@@ -369,6 +370,148 @@ class ComplianceRecord(Base):
         Index("idx_compliance_status", "status", "checked_at"),
         Index("idx_compliance_expires", "expires_at"),
     )
+
+
+class Settlement(Base):
+    """
+    On-chain settlement record for a completed payment.
+
+    Lifecycle: pending → confirmed (happy path) | failed (on-chain error).
+    A payment should have at most one *confirmed* settlement.
+    """
+
+    __tablename__ = "settlements"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    payment_id = Column(UUID(as_uuid=True), ForeignKey("payments.id"), nullable=False, index=True)
+
+    # On-chain identity
+    blockchain_tx_hash = Column(String(255), unique=True, nullable=False, index=True)
+    blockchain_network = Column(String(50), nullable=False)
+
+    # Financial amounts
+    settlement_amount = Column(Numeric(15, 2), nullable=False)
+    settlement_currency = Column(String(3), nullable=False)
+
+    # Lifecycle — values: pending | confirmed | failed
+    status = Column(String(50), default="pending", nullable=False)
+
+    # On-chain confirmation details (populated once confirmed)
+    block_number = Column(BigInteger, nullable=True)
+    gas_used = Column(BigInteger, nullable=True)
+
+    # Timestamps
+    settled_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    confirmed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    # Relationships
+    payment: Mapped["Payment"] = relationship("Payment")
+    refunds: Mapped[List["Refund"]] = relationship("Refund", back_populates="settlement")
+
+    __table_args__ = (
+        Index("idx_settlements_payment_id", "payment_id"),
+        Index("idx_settlements_status", "status", "settled_at"),
+        Index("idx_settlements_network", "blockchain_network"),
+        CheckConstraint("settlement_amount > 0", name="check_positive_settlement_amount"),
+    )
+
+
+class Refund(Base):
+    """
+    Refund (compensating transaction) record for a payment.
+
+    Created by the PaymentWatchdog for stuck payments or by other refund
+    triggers (manual request, compliance hold, etc.).  Stores the saga
+    rollback outcome so operators can audit which steps were reversed.
+    """
+
+    __tablename__ = "refunds"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    payment_id = Column(UUID(as_uuid=True), ForeignKey("payments.id"), nullable=False, index=True)
+
+    # Optional link to the settlement being reversed
+    settlement_id = Column(UUID(as_uuid=True), ForeignKey("settlements.id"), nullable=True, index=True)
+
+    # On-chain refund transaction (None until submitted)
+    refund_tx_hash = Column(String(255), nullable=True, index=True)
+
+    # Financial amounts
+    refund_amount = Column(Numeric(15, 2), nullable=False)
+    refund_currency = Column(String(3), nullable=False)
+
+    # Why the refund was initiated
+    # Values: PAYMENT_TIMEOUT | SETTLEMENT_FAILED | MANUAL_REQUEST | COMPLIANCE_HOLD
+    reason = Column(String(100), nullable=False)
+
+    # Lifecycle — values: pending | processing | completed | failed
+    status = Column(String(50), default="pending", nullable=False)
+
+    # Who / what triggered the refund — values: watchdog | user | admin
+    initiated_by = Column(String(50), default="watchdog", nullable=False)
+
+    # Saga rollback outcome stored as JSON text arrays
+    # Use the helpers below to access as Python lists.
+    _rolled_back_steps = Column("rolled_back_steps", Text, nullable=True)
+    _failed_rollbacks = Column("failed_rollbacks", Text, nullable=True)
+
+    # Timestamps
+    initiated_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    # Relationships
+    payment: Mapped["Payment"] = relationship("Payment")
+    settlement: Mapped[Optional["Settlement"]] = relationship(
+        "Settlement", back_populates="refunds"
+    )
+
+    __table_args__ = (
+        Index("idx_refunds_payment_id", "payment_id"),
+        Index("idx_refunds_status", "status", "initiated_at"),
+        Index("idx_refunds_reason", "reason"),
+        Index("idx_refunds_initiated_by", "initiated_by", "initiated_at"),
+        CheckConstraint("refund_amount > 0", name="check_positive_refund_amount"),
+    )
+
+    # ------------------------------------------------------------------
+    # Convenience helpers for the JSON text columns
+    # ------------------------------------------------------------------
+
+    @property
+    def rolled_back_steps(self) -> List[str]:
+        """Return the list of successfully rolled-back step IDs."""
+        if self._rolled_back_steps is None:
+            return []
+        try:
+            return json.loads(self._rolled_back_steps)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    @rolled_back_steps.setter
+    def rolled_back_steps(self, value: List[str]) -> None:
+        self._rolled_back_steps = json.dumps(value) if value is not None else None
+
+    @property
+    def failed_rollbacks(self) -> List[str]:
+        """Return the list of step IDs whose rollback failed."""
+        if self._failed_rollbacks is None:
+            return []
+        try:
+            return json.loads(self._failed_rollbacks)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    @failed_rollbacks.setter
+    def failed_rollbacks(self, value: List[str]) -> None:
+        self._failed_rollbacks = json.dumps(value) if value is not None else None
 
 
 # Database session management

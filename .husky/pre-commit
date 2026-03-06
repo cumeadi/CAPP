@@ -2,4 +2,33 @@
 . "$(dirname "$0")/_/husky.sh"
 
 echo "🐶 Running Pre-Commit Checks..."
+
+# ─── Secret Scanner ──────────────────────────────────────────────────────────
+# gitleaks protect scans only the files that are STAGED for this commit.
+# It exits non-zero if any secret is detected, aborting the commit.
+# Install: brew install gitleaks
+# Docs:    https://github.com/gitleaks/gitleaks
+if command -v gitleaks >/dev/null 2>&1; then
+  echo "🔑 Scanning staged files for secrets (gitleaks)..."
+  gitleaks protect --staged --config .gitleaks.toml -v
+  GITLEAKS_EXIT=$?
+  if [ "$GITLEAKS_EXIT" -ne 0 ]; then
+    echo ""
+    echo "❌ gitleaks detected a potential secret in your staged changes."
+    echo "   Review the finding above. If it is a false positive, add an"
+    echo "   allowlist entry to .gitleaks.toml and re-stage that file."
+    echo "   NEVER commit real credentials. Use environment variables instead."
+    exit 1
+  fi
+  echo "✅ No secrets detected."
+else
+  echo "⚠️  WARNING: gitleaks is not installed — secret scanning is SKIPPED."
+  echo "   Install it with: brew install gitleaks"
+  echo "   This check is mandatory. Install gitleaks before committing."
+  # Fail the commit if gitleaks is missing entirely, so the check cannot be
+  # silently bypassed on a developer machine that skipped the install.
+  exit 1
+fi
+
+# ─── Existing Quality Checks ─────────────────────────────────────────────────
 npm run validate

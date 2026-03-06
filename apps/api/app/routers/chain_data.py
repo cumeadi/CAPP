@@ -74,21 +74,31 @@ async def get_polygon_balance(address: str):
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(config.POLYGON_RPC_URL, json=payload)
+
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Polygon RPC returned HTTP {response.status_code}. "
+                           "Check that ALCHEMY_API_KEY is set to a valid key."
+                )
+
             data = response.json()
-            
+
             if "error" in data:
                 raise HTTPException(status_code=400, detail=f"Alchemy Error: {data['error']['message']}")
-                
+
             wei_balance = int(data["result"], 16)
             matic_balance = wei_balance / 10**18
-            
+
             return {
                 "chain": "POLYGON",
                 "address": address,
                 "balance_matic": matic_balance,
                 "balance_wei": str(wei_balance)
             }
-    
+
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 

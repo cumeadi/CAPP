@@ -46,7 +46,7 @@ class CAPPClient:
         self.corridors = CorridorsModule(self._http_client)
         self.agents = AgentsModule(self._http_client)
         self.approvals = ApprovalsModule(self._http_client)
-        self.events = EventsModule(self)
+        self.events = EventsModule(self._http_client)
         self.compliance = ComplianceModule(self._http_client)
         self.yield_api = YieldModule(self._http_client)
 

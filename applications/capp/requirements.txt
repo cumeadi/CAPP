@@ -98,5 +98,6 @@ sentry-sdk[fastapi]>=1.40.0
 locust>=2.17.0
 
 # Production Server
-gunicorn>=21.2.0 mcp>=1.0.0
+gunicorn>=21.2.0
+mcp>=1.0.0; python_version >= "3.10"
 passlib>=1.7.4
