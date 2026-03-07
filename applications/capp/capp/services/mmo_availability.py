@@ -275,9 +275,9 @@ class MMOAvailabilityService:
             
             # Build status dictionary
             all_status = {}
-            for i, result in enumerate(results):
+            for provider, result in zip(MMOProvider, results):
                 if isinstance(result, MMOStatus):
-                    all_status[MMOProvider[i]] = result
+                    all_status[provider] = result
             
             return all_status
             

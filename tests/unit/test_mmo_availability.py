@@ -156,15 +156,21 @@ class TestPerformHealthCheck:
 class TestGetAllMmoStatus:
 
     @pytest.mark.asyncio
-    async def test_returns_dict(self, svc):
-        # NOTE: get_all_mmo_status has a pre-existing bug (MMOProvider[i] by integer
-        # index fails for string enum), so it always returns {}. We just verify the
-        # return type here to exercise the code path.
+    async def test_returns_all_providers(self, svc):
         all_status = await svc.get_all_mmo_status()
         assert isinstance(all_status, dict)
+        assert len(all_status) == len(list(MMOProvider))
 
     @pytest.mark.asyncio
-    async def test_get_available_providers_returns_list(self, svc):
-        """Exercise get_available_providers which calls get_all_mmo_status."""
+    async def test_all_values_are_mmo_status(self, svc):
+        all_status = await svc.get_all_mmo_status()
+        for provider, status in all_status.items():
+            assert isinstance(provider, MMOProvider)
+            assert isinstance(status, MMOStatus)
+
+    @pytest.mark.asyncio
+    async def test_get_available_providers_returns_all_online(self, svc):
+        """All default providers are online, so all should be returned."""
         providers = await svc.get_available_providers()
         assert isinstance(providers, list)
+        assert len(providers) == len(list(MMOProvider))

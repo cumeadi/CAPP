@@ -11,7 +11,13 @@ import structlog
 
 from applications.capp.capp.models.payments import PaymentRoute, Country, CrossBorderPayment
 from applications.capp.capp.config.settings import get_settings
-from packages.intelligence.compliance.agent import AIComplianceAgent
+
+try:
+    from packages.intelligence.compliance.agent import AIComplianceAgent
+    _AI_AGENT_AVAILABLE = True
+except ImportError:
+    AIComplianceAgent = None  # type: ignore[assignment,misc]
+    _AI_AGENT_AVAILABLE = False
 import datetime
 import csv
 import io
@@ -53,8 +59,8 @@ class ComplianceService:
         # Load country-specific regulations
         self.country_regulations = self._load_country_regulations()
         
-        # Initialize AI Agent
-        self.ai_agent = AIComplianceAgent()
+        # Initialize AI Agent (optional — falls back to rule-based checks if unavailable)
+        self.ai_agent = AIComplianceAgent() if _AI_AGENT_AVAILABLE else None
     
     def _load_country_regulations(self) -> Dict[str, Dict]:
         """Load country-specific regulatory requirements"""
@@ -146,8 +152,8 @@ class ComplianceService:
             ComplianceResult: Compliance check result
         """
         try:
-            # If payment context is available, use AI Agent for deep analysis
-            if payment:
+            # If payment context is available and AI agent is loaded, use it for deep analysis
+            if payment and self.ai_agent is not None:
                  self.logger.info("Delegating compliance check to AI Agent", payment_id=str(payment.payment_id))
                  ai_result = await self.ai_agent.evaluate_transaction(payment)
                  
@@ -395,8 +401,6 @@ class ComplianceService:
         """Get regulatory requirements for a specific country"""
         return self.country_regulations.get(country, {})
     
-    async def get_supported_countries(self) -> List[Country]:
-        """Get list of supported countries with regulations"""
     async def get_supported_countries(self) -> List[Country]:
         """Get list of supported countries with regulations"""
         return list(self.country_regulations.keys())
