@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from applications.capp.capp.models.user import UserRole
 from applications.capp.capp.models.payments import Chain
 
@@ -60,7 +60,8 @@ class AgentCredentialInDB(AgentCredentialBase):
     daily_spend_accumulator: float = Field(default=0.0)
     last_spend_reset: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    @validator('expires_at', pre=True, always=True)
+    @field_validator('expires_at', mode='before')
+    @classmethod
     def set_expires_at(cls, v):
         if v is None:
             return datetime.now(timezone.utc) + timedelta(days=30)

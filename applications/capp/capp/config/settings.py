@@ -6,8 +6,8 @@ import os
 from typing import List, Optional
 from functools import lru_cache
 
-from pydantic import Field, validator
-from pydantic_settings import BaseSettings
+from pydantic import Field, field_validator, ValidationInfo
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -186,31 +186,35 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = Field(default=None, env="GEMINI_API_KEY")
     GEMINI_MODEL: str = Field(default="gemini-2.0-flash", env="GEMINI_MODEL")
     
-    @validator("ALLOWED_ORIGINS", pre=True)
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+    )
+
+    @field_validator("ALLOWED_ORIGINS", mode='before')
+    @classmethod
     def parse_allowed_origins(cls, v):
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]
         return v
-    
-    @validator("ALLOWED_HOSTS", pre=True)
+
+    @field_validator("ALLOWED_HOSTS", mode='before')
+    @classmethod
     def parse_allowed_hosts(cls, v):
         if isinstance(v, str):
             return [host.strip() for host in v.split(",")]
         return v
-    
+
     # Removed KAFKA_BOOTSTRAP_SERVERS validator since field is now a string
-    
-    @validator("SECRET_KEY")
-    def validate_secret_key(cls, v, values):
-        env = values.get("ENVIRONMENT", "development")
+
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def validate_secret_key(cls, v: str, info: ValidationInfo) -> str:
+        env = info.data.get("ENVIRONMENT", "development")
         if env == "production" and v == "CHANGE_ME_SECRET_KEY":
             raise ValueError("❌ FATAL: Application is in PRODUCTION mode but using default CHANGE_ME_SECRET_KEY! Set SECRET_KEY env var.")
         return v
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
 
 
 @lru_cache()

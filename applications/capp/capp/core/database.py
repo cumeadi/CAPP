@@ -16,7 +16,7 @@ from sqlalchemy import (
     ForeignKey, Index, UniqueConstraint, CheckConstraint, select
 )
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.dialects.postgresql import UUID
 import structlog

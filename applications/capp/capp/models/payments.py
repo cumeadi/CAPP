@@ -5,11 +5,10 @@ Payment domain models for CAPP cross-border payment system
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import Dict, List, Optional, Any
+from typing import Annotated, Dict, List, Optional, Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, validator, model_validator
-from pydantic.types import condecimal
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Chain(str, Enum):
@@ -220,8 +219,8 @@ class PaymentRoute(BaseModel):
     to_mmo: Optional[MMOProvider] = None
     from_bank: Optional[str] = None
     to_bank: Optional[str] = None
-    exchange_rate: condecimal(max_digits=10, decimal_places=6)
-    fees: condecimal(max_digits=10, decimal_places=2)
+    exchange_rate: Annotated[Decimal, Field(max_digits=10, decimal_places=6)]
+    fees: Annotated[Decimal, Field(max_digits=10, decimal_places=2)]
     estimated_delivery_time: int  # in minutes
     success_rate: float = Field(ge=0.0, le=1.0)
     cost_score: float = Field(ge=0.0, le=1.0)
@@ -299,11 +298,11 @@ class CrossBorderPayment(BaseModel):
     payment_method: PaymentMethod
     
     # Amount and currency
-    amount: condecimal(max_digits=15, decimal_places=2, gt=0)
+    amount: Annotated[Decimal, Field(max_digits=15, decimal_places=2, gt=0)]
     from_currency: Currency
     to_currency: Currency
-    exchange_rate: Optional[condecimal(max_digits=10, decimal_places=6)] = None
-    converted_amount: Optional[condecimal(max_digits=15, decimal_places=2)] = None
+    exchange_rate: Optional[Annotated[Decimal, Field(max_digits=10, decimal_places=6)]] = None
+    converted_amount: Optional[Annotated[Decimal, Field(max_digits=15, decimal_places=2)]] = None
     
     # Parties
     sender: SenderInfo
@@ -343,7 +342,8 @@ class CrossBorderPayment(BaseModel):
     sync_attempts: int = 0
     last_sync_attempt: Optional[datetime] = None
     
-    @validator('reference_id')
+    @field_validator('reference_id')
+    @classmethod
     def validate_reference_id(cls, v):
         """Validate reference ID format"""
         # Allow alphanumeric characters, hyphens, and underscores
@@ -351,7 +351,8 @@ class CrossBorderPayment(BaseModel):
             raise ValueError('Reference ID must contain only alphanumeric characters, hyphens, and underscores')
         return v.upper()
     
-    @validator('amount')
+    @field_validator('amount')
+    @classmethod
     def validate_amount(cls, v):
         """Validate payment amount"""
         if v <= 0:

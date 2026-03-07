@@ -10,7 +10,7 @@ from typing import Optional, List
 from enum import Enum
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class UserRole(str, Enum):
@@ -43,7 +43,8 @@ class UserCreate(UserBase):
     """User creation model"""
     password: str = Field(..., min_length=8, max_length=100)
 
-    @validator('password')
+    @field_validator('password')
+    @classmethod
     def validate_password(cls, v):
         """Validate password strength"""
         if len(v) < 8:
@@ -123,7 +124,8 @@ class PasswordChangeRequest(BaseModel):
     old_password: str
     new_password: str = Field(..., min_length=8, max_length=100)
 
-    @validator('new_password')
+    @field_validator('new_password')
+    @classmethod
     def validate_password(cls, v):
         """Validate password strength"""
         if len(v) < 8:
@@ -147,7 +149,8 @@ class PasswordResetConfirm(BaseModel):
     token: str
     new_password: str = Field(..., min_length=8, max_length=100)
 
-    @validator('new_password')
+    @field_validator('new_password')
+    @classmethod
     def validate_password(cls, v):
         """Validate password strength"""
         if len(v) < 8:

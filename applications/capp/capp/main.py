@@ -5,6 +5,8 @@ This module initializes the FastAPI application with all necessary
 middleware, routes, and startup/shutdown events.
 """
 
+from contextlib import asynccontextmanager
+
 import structlog
 from fastapi import FastAPI, Request
 from starlette.middleware.cors import CORSMiddleware
@@ -46,13 +48,33 @@ structlog.configure(
 
 logger = structlog.get_logger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: startup then shutdown."""
+    logger.info("Starting CAPP application...")
+    logger.info(f"Allowed Origins: {settings.ALLOWED_ORIGINS}")
+    await init_redis()
+    await init_db()
+    await init_aptos_client()
+    await init_polygon_client()
+    validate_all_secrets_on_startup()
+    logger.info("CAPP application started successfully")
+    yield
+    logger.info("Shutting down CAPP application...")
+    await close_redis()
+    await close_db()
+    await close_aptos_client()
+
+
 # Create FastAPI application
 app = FastAPI(
     title="CAPP - Canza Autonomous Payment Protocol",
     description="AI-powered payment system for African cross-border commerce",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # Add rate limiter state
@@ -90,42 +112,6 @@ app.add_middleware(AgentAuthMiddleware)
 # Include API routes
 app.include_router(api_router, prefix="/api/v1")
 
-
-@app.on_event("startup")
-async def startup_event():
-    """Application startup event"""
-    logger.info("Starting CAPP application...")
-    logger.info(f"Allowed Origins: {settings.ALLOWED_ORIGINS}")
-
-    # Initialize Redis
-    await init_redis()
-
-    # Initialize Database
-    await init_db()
-
-    # Initialize Blockchain Clients
-    await init_aptos_client()
-    await init_polygon_client()
-
-    # Validate secrets on startup
-    validate_all_secrets_on_startup()
-
-    logger.info("CAPP application started successfully")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Application shutdown event"""
-    logger.info("Shutting down CAPP application...")
-    
-    # Close Redis
-    await close_redis()
-
-    # Close Database
-    await close_db()
-
-    # Close Blockchain Clients
-    await close_aptos_client()
 
 
 @app.get("/")
