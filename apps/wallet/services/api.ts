@@ -58,7 +58,7 @@ export const api = {
 
     // Wallet Stats (Yield)
     getYieldStats: async (): Promise<YieldStatsResponse> => {
-        const res = await fetch(`${API_BASE}/api/v1/wallet/stats`);
+        const res = await fetch(`${API_BASE}/wallet/stats`);
         if (!res.ok) {
             console.warn('Failed to fetch stats, falling back to 0');
             return {

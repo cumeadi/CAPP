@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import '@rainbow-me/rainbowkit/styles.css';
 import { getDefaultConfig, RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
-import { mainnet, polygon, arbitrum, optimism, sepolia, polygonAmoy, arbitrumSepolia, optimismSepolia } from "wagmi/chains";
+import { mainnet, polygon, arbitrum, optimism, base, sepolia, polygonAmoy, arbitrumSepolia, baseSepolia, optimismSepolia } from "wagmi/chains";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
 import { useSettings } from "@/components/Context/SettingsContext";
@@ -13,7 +13,7 @@ import { useSettings } from "@/components/Context/SettingsContext";
 export const config = getDefaultConfig({
     appName: 'CAPP Wallet',
     projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '3a8170812b534d0ff9d794f3580db841',
-    chains: [mainnet, polygon, arbitrum, optimism],
+    chains: [mainnet, polygon, arbitrum, base, optimism],
     ssr: true,
 });
 
@@ -25,8 +25,8 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
 
     const config = useMemo(() => {
         const chains = testnetMode
-            ? [sepolia, polygonAmoy, arbitrumSepolia, optimismSepolia] as const
-            : [mainnet, polygon, arbitrum, optimism] as const;
+            ? [sepolia, polygonAmoy, arbitrumSepolia, baseSepolia, optimismSepolia] as const
+            : [mainnet, polygon, arbitrum, base, optimism] as const;
 
         return getDefaultConfig({
             appName: 'CAPP Wallet',

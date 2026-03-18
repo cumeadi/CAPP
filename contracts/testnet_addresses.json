@@ -1,0 +1,16 @@
+{
+  "aptos": {
+    "devnet": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+    "testnet": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+  },
+  "polygon_amoy": "0x1234567890abcdef1234567890abcdef12345678",
+  "base_sepolia": "0x1234567890abcdef1234567890abcdef12345678",
+  "arbitrum_sepolia": "0x1234567890abcdef1234567890abcdef12345678",
+  "starknet_sepolia": "0x012345678901234567890123456789012345678901234567890123456789abcd",
+  "_notes": {
+    "aptos": "Keep both devnet and testnet for flexibility during development",
+    "evm_chains": "Replace with actual deployed contract addresses after running deployment scripts",
+    "starknet": "Use Starknet address format (hex string with 63+ chars)",
+    "placeholder_usage": "These are placeholder addresses. Run deploy_all_testnets.sh to get real addresses."
+  }
+}

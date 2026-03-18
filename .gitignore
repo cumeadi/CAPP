@@ -333,3 +333,13 @@ htmlcov/
 .coverage
 coverage.xml
 *.cover 
+# Testnet Deployment Artifacts
+# Do NOT commit real contract addresses or deployment history
+.deploy_*.json
+.env.testnet.deployed
+
+# Smart Contract Build Artifacts
+forge-cache/
+forge-out/
+hardhat-cache/
+hardhat-artifacts/

@@ -60,25 +60,23 @@ export default function DashboardPage() {
     }
   };
 
-  const handleConnectAptos = () => {
+  const handleConnectAptos = async () => {
     console.log("Available Aptos Wallets:", aptosWallets);
 
-    // 1. Find installed wallets (ReadyState.Installed is best, but string check for now)
-    // Note: readyState is usually "Installed", "NotDetected", "Loadable"
     const installedWallet = aptosWallets.find(w => w.readyState === "Installed");
+    const walletToConnect = installedWallet
+      ?? aptosWallets.find(w => w.name === "Petra" || w.name === "Petra Wallet");
 
-    if (installedWallet) {
-      console.log("Connecting to installed wallet:", installedWallet.name);
-      connectAptos(installedWallet.name);
-    } else {
-      // Fallback: Try "Petra" specifically if it exists in list even if readyState is weird
-      const petra = aptosWallets.find(w => w.name === "Petra" || w.name === "Petra Wallet");
-      if (petra) {
-        console.log("Connecting to Petra fallback:", petra.name);
-        connectAptos(petra.name);
-      } else {
-        alert("No installed Aptos wallet found. Please install Petra from https://petra.app/");
-      }
+    if (!walletToConnect) {
+      alert("No installed Aptos wallet found. Please install Petra from https://petra.app/");
+      return;
+    }
+
+    try {
+      console.log("Connecting to wallet:", walletToConnect.name);
+      await connectAptos(walletToConnect.name);
+    } catch (e) {
+      console.log("Aptos wallet connection cancelled or failed:", e);
     }
   };
 

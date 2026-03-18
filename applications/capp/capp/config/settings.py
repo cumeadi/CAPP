@@ -82,10 +82,11 @@ class Settings(BaseSettings):
     STARKNET_CHAIN_ID: str = Field(default="SN_SEPOLIA", env="STARKNET_CHAIN_ID")
     
     
-    # Smart Contract Address (Placeholder until deployment)
     # EVM RPCs (Base & Arbitrum)
     BASE_RPC_URL: str = Field(default="https://base-mainnet.g.alchemy.com/v2/REDACTED_ALCHEMY_KEY", env="BASE_RPC_URL")
+    BASE_CHAIN_ID: int = Field(default=8453, env="BASE_CHAIN_ID")  # Mainnet, override to 84532 for Sepolia testnet
     ARBITRUM_RPC_URL: str = Field(default="https://arb-mainnet.g.alchemy.com/v2/REDACTED_ALCHEMY_KEY", env="ARBITRUM_RPC_URL")
+    ARBITRUM_CHAIN_ID: int = Field(default=42161, env="ARBITRUM_CHAIN_ID")  # Mainnet, override to 421614 for Sepolia testnet
     
     # Private Key for EVM transactions (Base/Arbitrum)
     EVM_PRIVATE_KEY: Optional[str] = Field(default=None, env="EVM_PRIVATE_KEY")
@@ -190,6 +191,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
+        extra="ignore",
     )
 
     @field_validator("ALLOWED_ORIGINS", mode='before')

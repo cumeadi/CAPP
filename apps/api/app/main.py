@@ -7,6 +7,8 @@ import structlog
 import asyncio
 import sys
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 from applications.capp.capp.config.settings import settings
 from applications.capp.capp.core.limiter import limiter
