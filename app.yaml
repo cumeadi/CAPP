@@ -1,0 +1,162 @@
+name: capp
+
+# GitHub Integration
+github:
+  repo: cumeadi/CAPP
+  branch: main
+
+region: nyc3
+
+# Services Definition
+services:
+  # FastAPI Backend Service
+  - name: capp-api
+    github:
+      repo: cumeadi/CAPP
+      branch: main
+    build_command: ""
+    dockerfile_path: Dockerfile
+    http_port: 8000
+    health_check:
+      http_path: /health
+    instance_count: 1
+    instance_size_slug: basic-s
+    max_instance_count: 3
+    min_instance_count: 1
+    envs:
+      - key: ENVIRONMENT
+        scope: RUN_TIME
+        value: production
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: postgresql://doadmin:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/defaultdb?sslmode=require
+      - key: REDIS_URL
+        scope: RUN_TIME
+        value: ${REDIS_URL}
+      - key: ALCHEMY_API_KEY
+        scope: RUN_TIME
+        value: ${ALCHEMY_API_KEY}
+      - key: APTOS_NODE_URL
+        scope: RUN_TIME
+        value: https://fullnode.testnet.aptoslabs.com
+      - key: APTOS_CHAIN_ID
+        scope: RUN_TIME
+        value: "2"
+      - key: POLYGON_RPC_URL
+        scope: RUN_TIME
+        value: https://polygon-amoy.g.alchemy.com/v2/${ALCHEMY_API_KEY}
+      - key: POLYGON_CHAIN_ID
+        scope: RUN_TIME
+        value: "80002"
+      - key: BASE_RPC_URL
+        scope: RUN_TIME
+        value: https://base-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}
+      - key: BASE_CHAIN_ID
+        scope: RUN_TIME
+        value: "84532"
+      - key: ARBITRUM_RPC_URL
+        scope: RUN_TIME
+        value: https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}
+      - key: ARBITRUM_CHAIN_ID
+        scope: RUN_TIME
+        value: "421614"
+      - key: LOG_LEVEL
+        scope: RUN_TIME
+        value: INFO
+      - key: SECRET_KEY
+        scope: RUN_TIME
+        value: ${SECRET_KEY}
+      - key: APTOS_PRIVATE_KEY
+        scope: RUN_TIME
+        value: ${APTOS_PRIVATE_KEY}
+      - key: POLYGON_PRIVATE_KEY
+        scope: RUN_TIME
+        value: ${POLYGON_PRIVATE_KEY}
+      - key: BASE_PRIVATE_KEY
+        scope: RUN_TIME
+        value: ${BASE_PRIVATE_KEY}
+      - key: ARBITRUM_PRIVATE_KEY
+        scope: RUN_TIME
+        value: ${ARBITRUM_PRIVATE_KEY}
+    http_routes:
+      - path: /api
+        preserve_path_prefix: true
+
+  # Wallet Frontend Service
+  - name: capp-wallet
+    github:
+      repo: cumeadi/CAPP
+      branch: main
+    build_command: "cd apps/wallet && npm install && npm run build"
+    dockerfile_path: apps/wallet/Dockerfile
+    http_port: 3000
+    health_check:
+      http_path: /
+    instance_count: 1
+    instance_size_slug: basic-xs
+    max_instance_count: 2
+    min_instance_count: 1
+    envs:
+      - key: NEXT_PUBLIC_API_URL
+        scope: RUN_TIME
+        value: https://${APP_DOMAIN}/api
+      - key: NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID
+        scope: RUN_TIME
+        value: ${WALLETCONNECT_PROJECT_ID}
+      - key: NODE_ENV
+        scope: RUN_TIME
+        value: production
+    http_routes:
+      - path: /
+        preserve_path_prefix: true
+
+  # Web Frontend Service
+  - name: capp-web
+    github:
+      repo: cumeadi/CAPP
+      branch: main
+    build_command: "cd apps/web && npm install && npm run build"
+    dockerfile_path: apps/web/Dockerfile
+    http_port: 3000
+    health_check:
+      http_path: /
+    instance_count: 1
+    instance_size_slug: basic-xs
+    max_instance_count: 2
+    min_instance_count: 1
+    envs:
+      - key: NEXT_PUBLIC_API_URL
+        scope: RUN_TIME
+        value: https://${APP_DOMAIN}/api
+      - key: NODE_ENV
+        scope: RUN_TIME
+        value: production
+    http_routes:
+      - path: /app
+        preserve_path_prefix: true
+
+# Database Configuration
+databases:
+  - name: capp-db
+    engine: PG
+    version: "15"
+    production: true
+
+static_sites: []
+
+# HTTP Ingress Routes
+ingress:
+  rules:
+    - source:
+        type: HTTP
+      http:
+        paths:
+          - path: /api
+            component:
+              name: capp-api
+          - path: /
+            component:
+              name: capp-wallet
+          - path: /app
+            component:
+              name: capp-web
