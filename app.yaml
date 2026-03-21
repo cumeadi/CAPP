@@ -1,21 +1,14 @@
 name: capp
-
-# GitHub Integration
-github:
-  repo: cumeadi/CAPP
-  branch: main
-
 region: nyc3
 
-# Services Definition
 services:
-  # FastAPI Backend Service
   - name: capp-api
-    github:
+    source:
+      type: github
       repo: cumeadi/CAPP
       branch: main
-    build_command: ""
-    dockerfile_path: Dockerfile
+    build:
+      dockerfile_path: Dockerfile
     http_port: 8000
     health_check:
       http_path: /health
@@ -78,17 +71,14 @@ services:
       - key: ARBITRUM_PRIVATE_KEY
         scope: RUN_TIME
         value: ${ARBITRUM_PRIVATE_KEY}
-    http_routes:
-      - path: /api
-        preserve_path_prefix: true
 
-  # Wallet Frontend Service
   - name: capp-wallet
-    github:
+    source:
+      type: github
       repo: cumeadi/CAPP
       branch: main
-    build_command: "cd apps/wallet && npm install && npm run build"
-    dockerfile_path: apps/wallet/Dockerfile
+    build:
+      dockerfile_path: apps/wallet/Dockerfile
     http_port: 3000
     health_check:
       http_path: /
@@ -106,17 +96,14 @@ services:
       - key: NODE_ENV
         scope: RUN_TIME
         value: production
-    http_routes:
-      - path: /
-        preserve_path_prefix: true
 
-  # Web Frontend Service
   - name: capp-web
-    github:
+    source:
+      type: github
       repo: cumeadi/CAPP
       branch: main
-    build_command: "cd apps/web && npm install && npm run build"
-    dockerfile_path: apps/web/Dockerfile
+    build:
+      dockerfile_path: apps/web/Dockerfile
     http_port: 3000
     health_check:
       http_path: /
@@ -131,32 +118,9 @@ services:
       - key: NODE_ENV
         scope: RUN_TIME
         value: production
-    http_routes:
-      - path: /app
-        preserve_path_prefix: true
 
-# Database Configuration
 databases:
   - name: capp-db
     engine: PG
     version: "15"
     production: true
-
-static_sites: []
-
-# HTTP Ingress Routes
-ingress:
-  rules:
-    - source:
-        type: HTTP
-      http:
-        paths:
-          - path: /api
-            component:
-              name: capp-api
-          - path: /
-            component:
-              name: capp-wallet
-          - path: /app
-            component:
-              name: capp-web
