@@ -20,6 +20,14 @@ from packages.core.agents.base import ProcessingResult
 logger = structlog.get_logger(__name__)
 
 
+class AgentConsensusResult(BaseModel):
+    """Consensus result for framework-level agent coordination."""
+    consensus_reached: bool
+    recommended_action: str
+    agent_recommendations: List[Dict[str, Any]]
+    agreement_ratio: float
+
+
 class ConsensusType(str, Enum):
     """Types of consensus mechanisms"""
     MAJORITY = "majority"
@@ -65,62 +73,83 @@ class ConsensusEngine:
     multiple agents processing the same transaction.
     """
     
-    def __init__(self, config: ConsensusConfig):
-        self.config = config
+    def __init__(self, config: Optional[ConsensusConfig] = None):
+        self.config = config or ConsensusConfig()
         self.logger = structlog.get_logger(__name__)
-        
-        self.logger.info("Consensus engine initialized", config=config.dict())
+
+        self.logger.info("Consensus engine initialized", config=self.config.dict())
+
+    async def initialize(self) -> None:
+        """No-op async initializer — satisfies framework lifecycle protocol."""
+        self.logger.info("Consensus engine ready")
     
-    async def reach_consensus(self, results: List[ProcessingResult]) -> ProcessingResult:
+    async def reach_consensus(
+        self,
+        results: List[Any],
+        threshold: Optional[float] = None,
+    ) -> Union[ProcessingResult, AgentConsensusResult]:
         """
-        Reach consensus among multiple agent results
-        
+        Reach consensus among multiple agent results.
+
+        Accepts either a list of ``ProcessingResult`` objects (orchestrator path)
+        or a list of framework ``AgentResult`` objects (duck-typed by the presence
+        of an ``agent_id`` attribute).  Returns the corresponding type.
+
         Args:
-            results: List of processing results from different agents
-            
+            results: Agent outputs to reconcile.
+            threshold: Override the configured agreement threshold (framework path).
+
         Returns:
-            ProcessingResult: The consensus result
+            ProcessingResult when called from the orchestrator, or
+            AgentConsensusResult when called from the high-level SDK framework.
         """
+        if not results:
+            return ProcessingResult(
+                success=False,
+                transaction_id="unknown",
+                status="failed",
+                message="No results to reach consensus on",
+                error_code="NO_RESULTS",
+            )
+
+        # Detect framework AgentResult objects by duck-typing.
+        if hasattr(results[0], "agent_id"):
+            return await self._reach_agent_consensus(results, threshold)
+
+        return await self._reach_processing_consensus(results)
+
+    async def _reach_processing_consensus(
+        self, results: List[ProcessingResult]
+    ) -> ProcessingResult:
+        """Orchestrator path: reconcile ProcessingResult objects."""
         try:
-            if not results:
-                return ProcessingResult(
-                    success=False,
-                    transaction_id="unknown",
-                    status="failed",
-                    message="No results to reach consensus on",
-                    error_code="NO_RESULTS"
-                )
-            
             if len(results) < self.config.min_agents:
                 return ProcessingResult(
                     success=False,
                     transaction_id=results[0].transaction_id,
                     status="failed",
                     message=f"Insufficient agents for consensus: {len(results)} < {self.config.min_agents}",
-                    error_code="INSUFFICIENT_AGENTS"
+                    error_code="INSUFFICIENT_AGENTS",
                 )
-            
-            # Apply consensus mechanism
+
             consensus_result = await self._apply_consensus_mechanism(results)
-            
+
             if consensus_result.consensus_reached:
                 self.logger.info(
                     "Consensus reached",
                     consensus_type=self.config.consensus_type,
                     agreement_ratio=consensus_result.agreement_ratio,
-                    success=consensus_result.success
+                    success=consensus_result.success,
                 )
                 return consensus_result.selected_result
             else:
                 self.logger.warning(
                     "Consensus not reached",
                     consensus_type=self.config.consensus_type,
-                    agreement_ratio=consensus_result.agreement_ratio
+                    agreement_ratio=consensus_result.agreement_ratio,
                 )
-                
-                # Return the most common result or first successful result
                 return self._get_fallback_result(results)
-                
+
         except Exception as e:
             self.logger.error("Consensus mechanism failed", error=str(e))
             return ProcessingResult(
@@ -128,8 +157,49 @@ class ConsensusEngine:
                 transaction_id=results[0].transaction_id if results else "unknown",
                 status="failed",
                 message=f"Consensus mechanism failed: {str(e)}",
-                error_code="CONSENSUS_ERROR"
+                error_code="CONSENSUS_ERROR",
             )
+
+    async def _reach_agent_consensus(
+        self, results: List[Any], threshold: Optional[float]
+    ) -> AgentConsensusResult:
+        """Framework path: reconcile AgentResult objects."""
+        effective_threshold = threshold if threshold is not None else self.config.threshold
+
+        total = len(results)
+        weighted_success = sum(
+            r.confidence for r in results if r.success
+        )
+        total_weight = sum(r.confidence for r in results) or 1.0
+        agreement_ratio = weighted_success / total_weight
+
+        consensus_reached = agreement_ratio >= effective_threshold
+        recommended_action = "approve" if consensus_reached else "reject"
+
+        agent_recommendations = [
+            {
+                "agent_id": r.agent_id,
+                "agent_type": r.agent_type,
+                "recommendation": "approve" if r.success else "reject",
+                "confidence": r.confidence,
+            }
+            for r in results
+        ]
+
+        self.logger.info(
+            "Agent consensus evaluated",
+            total_agents=total,
+            agreement_ratio=agreement_ratio,
+            consensus_reached=consensus_reached,
+            recommended_action=recommended_action,
+        )
+
+        return AgentConsensusResult(
+            consensus_reached=consensus_reached,
+            recommended_action=recommended_action,
+            agent_recommendations=agent_recommendations,
+            agreement_ratio=agreement_ratio,
+        )
     
     async def _apply_consensus_mechanism(self, results: List[ProcessingResult]) -> ConsensusResult:
         """Apply the configured consensus mechanism"""

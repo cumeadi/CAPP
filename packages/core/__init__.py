@@ -11,14 +11,30 @@ Core orchestration logic for payment processing, including:
 __version__ = "0.1.0"
 __author__ = "Canza Team"
 
-from .orchestration import PaymentOrchestrator
-from .consensus import ConsensusEngine
-from .agents import BaseAgent
-from .performance import MetricsCollector
+# Lazily re-exported so that importing individual sub-packages (e.g.
+# packages.core.consensus.mechanisms) does NOT trigger the entire dependency
+# chain of every module in this package.  Callers that use these top-level
+# names still work; they just pay the import cost on first access.
+
+def __getattr__(name):
+    if name == "PaymentOrchestrator":
+        from .orchestration import PaymentOrchestrator
+        return PaymentOrchestrator
+    if name == "ConsensusEngine":
+        from .consensus import ConsensusEngine
+        return ConsensusEngine
+    if name == "BaseAgent":
+        from .agents import BaseFinancialAgent as BaseAgent
+        return BaseAgent
+    if name == "MetricsCollector":
+        from .performance import MetricsCollector
+        return MetricsCollector
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "PaymentOrchestrator",
-    "ConsensusEngine", 
+    "ConsensusEngine",
     "BaseAgent",
     "MetricsCollector",
-] 
+]

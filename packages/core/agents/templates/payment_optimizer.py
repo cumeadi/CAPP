@@ -21,7 +21,7 @@ import structlog
 from pydantic import BaseModel, Field
 
 from packages.core.agents.base import BaseFinancialAgent, AgentConfig
-from packages.core.agents.financial_base import FinancialTransaction, TransactionResult
+from packages.core.agents.financial_base import FinancialTransaction, FinancialProcessingResult as TransactionResult
 from packages.integrations.data.redis_client import RedisClient
 
 
