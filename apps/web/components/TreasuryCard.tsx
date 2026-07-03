@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ArrowRightLeft, ArrowDown, ArrowUp, Settings, Send, TrendingUp, CreditCard } from 'lucide-react';
+import { ArrowRightLeft, ArrowDown, ArrowUp, Settings, Send, TrendingUp, CreditCard, Globe } from 'lucide-react';
 import Link from 'next/link';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 
@@ -13,7 +13,7 @@ import BridgeModal from './BridgeModal';
 import TransferModal from './TransferModal';
 
 import { FiatModal } from './FiatModal';
-import { api } from '@/services/api';
+import { api, HifiCorridor } from '@/services/api';
 import { useTreasury } from '@/hooks/useTreasury';
 
 interface TreasuryCardProps {
@@ -38,6 +38,13 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
     const [isFiatOpen, setIsFiatOpen] = useState(false);
 
     const { data: yieldStats, loading } = useTreasury();
+    const [hifiCorridorCount, setHifiCorridorCount] = useState(0);
+
+    useEffect(() => {
+        api.getHifiCorridors().then(corridors => {
+            setHifiCorridorCount(corridors.length);
+        }).catch(() => {});
+    }, []);
 
     // Fallback to prop balance if yield stats not ready or if specific value missing
     const totalValue = yieldStats?.total_value_usd ?? balance.totalUsd;
@@ -87,7 +94,7 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
             </div>
 
             {/* Asset Allocation Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
                 <div className="p-4 bg-bg-tertiary border border-border-subtle rounded-xl hover:border-accent-primary transition-colors group">
                     <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1">Hot Wallet (Liquid)</div>
                     <div className="font-display text-xl font-semibold mb-1">${hotBalance.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
@@ -118,6 +125,22 @@ export default function TreasuryCard({ balance, address }: TreasuryCardProps) {
                     <div className="text-xs text-text-secondary flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-color-success animate-pulse"></span>
                         Aave V3 Strategy
+                    </div>
+                </div>
+
+                {/* HIFI Africa Rail Card */}
+                <div className="p-4 bg-bg-tertiary border border-border-subtle rounded-xl hover:border-accent-warning transition-colors group relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-1">
+                        <div className="flex items-center gap-1 bg-accent-warning/10 text-accent-warning px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide">
+                            Beta
+                        </div>
+                    </div>
+                    <div className="text-[10px] text-text-tertiary uppercase tracking-widest mb-1 flex items-center gap-1">
+                        <Globe className="w-3 h-3" /> Africa Rail
+                    </div>
+                    <div className="font-display text-xl font-semibold mb-1">{hifiCorridorCount}</div>
+                    <div className="text-xs text-text-secondary">
+                        {hifiCorridorCount > 0 ? `${hifiCorridorCount} corridors` : 'Not enabled'}
                     </div>
                 </div>
             </div>

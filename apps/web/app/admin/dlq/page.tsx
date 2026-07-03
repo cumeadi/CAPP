@@ -10,14 +10,14 @@ import { toast } from "sonner";
 
 // Type definition for FailedTask
 interface FailedTask {
-    task_id: str;
-    task_type: str;
+    task_id: string;
+    task_type: string;
     payload: any;
-    error_message: str;
+    error_message: string;
     retry_count: number;
-    status: str;
-    created_at: str;
-    last_retry_at?: str;
+    status: string;
+    created_at: string;
+    last_retry_at?: string;
 }
 
 export default function AdminDLQPage() {
