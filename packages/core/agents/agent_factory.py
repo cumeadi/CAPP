@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Any, Type, TypeVar
 from abc import ABC, abstractmethod
 
 import structlog
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from packages.core.agents.base import BaseFinancialAgent, AgentConfig, AgentRegistry
 from packages.core.agents.financial_base import FinancialTransaction
@@ -41,6 +41,8 @@ class AgentTemplate(BaseModel):
 
 class AgentPool(BaseModel):
     """Pool of agents for load balancing"""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     agent_type: str
     agents: List[BaseFinancialAgent] = Field(default_factory=list)
     max_size: int = 10

@@ -312,6 +312,42 @@ export const api = {
         // Mock call
         console.log(`Compliance Decision: ${decision} for ${caseId}`);
         await new Promise(r => setTimeout(r, 1000));
+    },
+
+    // HIFI Africa Rail
+    getHifiCorridors: async (): Promise<HifiCorridor[]> => {
+        const res = await fetch(`${API_BASE}/wallet/hifi/corridors`);
+        if (!res.ok) {
+            if (res.status === 404) return []; // HIFI not enabled
+            throw new Error('Failed to fetch HIFI corridors');
+        }
+        return res.json();
+    },
+
+    hifiDeposit: async (request: HifiDepositRequest): Promise<HifiTransactionResponse> => {
+        const res = await fetch(`${API_BASE}/wallet/hifi/deposit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request)
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: 'Deposit failed' }));
+            throw new Error(err.detail || 'HIFI deposit failed');
+        }
+        return res.json();
+    },
+
+    hifiWithdraw: async (request: HifiWithdrawRequest): Promise<HifiTransactionResponse> => {
+        const res = await fetch(`${API_BASE}/wallet/hifi/withdraw`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request)
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: 'Withdrawal failed' }));
+            throw new Error(err.detail || 'HIFI withdrawal failed');
+        }
+        return res.json();
     }
 };
 
@@ -320,4 +356,67 @@ export const api = {
 export interface ChatResponse {
     response: string;
     timestamp: string;
+}
+
+// --- HIFI Africa Rail Types ---
+
+export interface HifiCorridor {
+    country_code: string;
+    country_name: string;
+    currency: string;
+    supports_payin: boolean;
+    supports_payout: boolean;
+    payment_methods: string[];
+    requires_additional_id: boolean;
+}
+
+export interface HifiDepositRequest {
+    country_code: string;
+    amount: number;
+    payment_method: 'bank_transfer' | 'mobile_money';
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    date_of_birth?: string;
+    id_type?: string;
+    id_number?: string;
+    address_line1?: string;
+    city?: string;
+    postal_code?: string;
+    additional_id_type?: string;
+    additional_id_number?: string;
+}
+
+export interface HifiWithdrawRequest {
+    country_code: string;
+    amount: number;
+    payment_method: 'bank_transfer' | 'mobile_money';
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    date_of_birth?: string;
+    id_type?: string;
+    id_number?: string;
+    address_line1?: string;
+    city?: string;
+    postal_code?: string;
+    additional_id_type?: string;
+    additional_id_number?: string;
+    bank_account_number?: string;
+    bank_code?: string;
+    mobile_money_number?: string;
+}
+
+export interface HifiTransactionResponse {
+    transaction_id: string;
+    status: string;
+    direction: string;
+    amount: string;
+    currency: string;
+    payment_method: string;
+    country_code: string;
+    estimated_delivery?: string;
+    message: string;
 }

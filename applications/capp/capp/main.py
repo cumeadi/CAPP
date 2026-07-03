@@ -93,14 +93,15 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestValidationMiddleware)
 
 # Add CORS middleware
-origins = settings.ALLOWED_ORIGINS
-# Force add development origins to ensure connectivity
-if True: # Always ensure these are present for now
+origins = list(settings.ALLOWED_ORIGINS)
+# Add localhost dev origins ONLY outside production. In production the allowlist
+# comes exclusively from settings.ALLOWED_ORIGINS so we never ship open CORS.
+if settings.ENVIRONMENT != "production":
     origins.extend(["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"])
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list(set(origins)),  # Environment-based whitelist + dev defaults
+    allow_origins=list(set(origins)),  # Environment-based whitelist (+ dev defaults outside prod)
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["Content-Type", "Authorization", "X-Request-ID", "X-API-Key"],

@@ -19,8 +19,6 @@ from applications.capp.capp.models.payments import (
 )
 from applications.capp.capp.core.aptos import get_aptos_client, AptosSettlementService
 from applications.capp.capp.core.polygon import PolygonSettlementService
-from applications.capp.capp.core.solana import get_solana_client
-from applications.capp.capp.core.stellar import get_stellar_client
 from applications.capp.capp.core.redis import get_cache
 from applications.capp.capp.config.settings import get_settings
 
@@ -59,15 +57,24 @@ class SettlementAgent(BasePaymentAgent):
         # Initialize Chain Services
         self.aptos_service = AptosSettlementService()
         self.polygon_service = PolygonSettlementService()
-        
-        # Service Registry
-        # For simplicity in this mock, the agent stores references to the bridge services
+
+        # Service Registry — Solana and Stellar are mock-only stubs.
+        # They are only registered when ENABLE_MOCK_CHAINS=true (sandbox/dev).
+        _settings = get_settings()
         self.services = {
             "APTOS": self.aptos_service,
             "POLYGON": self.polygon_service,
-            "SOLANA": get_solana_client(),
-            "STELLAR": get_stellar_client()
         }
+        if _settings.ENABLE_MOCK_CHAINS:
+            from applications.capp.capp.core.solana import get_solana_client
+            from applications.capp.capp.core.stellar import get_stellar_client
+            self.services["SOLANA"] = get_solana_client()
+            self.services["STELLAR"] = get_stellar_client()
+            logger.warning(
+                "mock_chains_enabled",
+                chains=["SOLANA", "STELLAR"],
+                note="These are simulated clients — no real settlement occurs.",
+            )
         
         # Batch management
         self.pending_batches: Dict[str, SettlementBatch] = {}

@@ -378,6 +378,29 @@ class MMOAvailabilityService:
         except Exception as e:
             self.logger.error("Failed to schedule maintenance", provider=provider, error=str(e))
     
+    async def get_rail_providers_by_country(self, country: str) -> List[str]:
+        """
+        Get all available payment rail providers for a country,
+        including unified rails like HIFI Africa alongside MMO providers.
+
+        Returns provider identifiers as strings (e.g. "hifi_africa", "mpesa").
+        """
+        providers: List[str] = []
+        settings = get_settings()
+
+        # Check HIFI availability
+        if settings.HIFI_ENABLED:
+            from packages.integrations.hifi.country_config import is_country_supported
+            if is_country_supported(country):
+                if not settings.HIFI_ALLOWED_COUNTRIES or country in settings.HIFI_ALLOWED_COUNTRIES:
+                    providers.append("hifi_africa")
+
+        # Add existing MMO providers
+        mmo_providers = await self.get_providers_by_country(country)
+        providers.extend(p.value for p in mmo_providers)
+
+        return providers
+
     async def get_performance_metrics(self) -> Dict[str, float]:
         """Get overall performance metrics for all MMOs"""
         try:

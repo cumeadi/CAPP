@@ -13,6 +13,10 @@ import structlog
 from applications.capp.capp.models.payments import Currency
 from applications.capp.capp.config.settings import get_settings
 from applications.capp.capp.core.redis import get_cache
+from applications.capp.capp.services.circuit_breaker import get_circuit_breaker
+
+_exchangerate_breaker = get_circuit_breaker("exchangerate_api", threshold=5, timeout=120)
+_coinmarketcap_breaker = get_circuit_breaker("coinmarketcap_api", threshold=5, timeout=120)
 
 logger = structlog.get_logger(__name__)
 
@@ -139,19 +143,25 @@ class ExchangeRateService:
                 return None
             
             url = f"{self.settings.EXCHANGE_RATE_BASE_URL}/{from_currency}"
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        rates = data.get('rates', {})
-                        rate = rates.get(to_currency)
-                        
-                        if rate:
-                            return Decimal(str(rate))
-            
+
+            async def _fetch():
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url) as response:
+                        if response.status == 200:
+                            return await response.json()
+                        return None
+
+            data = await _exchangerate_breaker.call(_fetch)
+            if data:
+                rate = data.get("rates", {}).get(to_currency)
+                if rate:
+                    return Decimal(str(rate))
+
             return None
-            
+
+        except RuntimeError:
+            self.logger.warning("ExchangeRate API circuit breaker is open")
+            return None
         except Exception as e:
             self.logger.warning("Failed to get rate from ExchangeRate API", error=str(e))
             return None
@@ -213,27 +223,25 @@ class ExchangeRateService:
                 "Accept": "application/json"
             }
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params, headers=headers) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        # Path: data -> data -> quote -> [Target] -> price
-                        # CMC response format: { "data": { "symbol": "BTC", "quote": { "USD": { "price": 50000 } } } }
-                        # Note: CMC 'symbol' query returns a list or object depending on endpoint, 
-                        # price-conversion usually returns object keyed by 'id' or straight data.
-                        # Actually tools/price-conversion 'data' is a single object usually.
-                        
-                        # Let's verify structure: 
-                        # { "data": { "symbol": "APT", "amount": 1, "quote": { "USD": { "price": 10.5 } } } }
-                        
-                        quote = data.get("data", {}).get("quote", {}).get(to_currency, {})
-                        price = quote.get("price")
-                        
-                        if price:
-                            return Decimal(str(price))
-            
+            async def _fetch():
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, params=params, headers=headers) as response:
+                        if response.status == 200:
+                            return await response.json()
+                        return None
+
+            data = await _coinmarketcap_breaker.call(_fetch)
+            if data:
+                quote = data.get("data", {}).get("quote", {}).get(to_currency, {})
+                price = quote.get("price")
+                if price:
+                    return Decimal(str(price))
+
             return None
 
+        except RuntimeError:
+            self.logger.warning("CoinMarketCap circuit breaker is open")
+            return None
         except Exception as e:
             self.logger.warning("Failed to get rate from CoinMarketCap", error=str(e))
             return None

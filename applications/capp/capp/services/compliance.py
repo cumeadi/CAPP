@@ -104,7 +104,96 @@ class ComplianceService:
                 "required_documents": ["national_id", "proof_of_address"],
                 "restricted_countries": [],
                 "special_requirements": ["fica_compliance"]
-            }
+            },
+            # HIFI Africa Rail corridor countries
+            "TZ": {  # Tanzania
+                "kyc_required": True,
+                "aml_threshold": 2000000,  # TZS
+                "max_daily_limit": 1000000,  # TZS
+                "required_documents": ["national_id", "phone_number"],
+                "restricted_countries": [],
+                "special_requirements": ["mobile_money_registration"]
+            },
+            "ZM": {  # Zambia
+                "kyc_required": True,
+                "aml_threshold": 50000,  # ZMW
+                "max_daily_limit": 20000,  # ZMW
+                "required_documents": ["national_id", "phone_number"],
+                "restricted_countries": [],
+                "special_requirements": []
+            },
+            "BW": {  # Botswana
+                "kyc_required": True,
+                "aml_threshold": 10000,  # BWP
+                "max_daily_limit": 5000,  # BWP
+                "required_documents": ["national_id"],
+                "restricted_countries": [],
+                "special_requirements": []
+            },
+            "MW": {  # Malawi
+                "kyc_required": True,
+                "aml_threshold": 2000000,  # MWK
+                "max_daily_limit": 1000000,  # MWK
+                "required_documents": ["national_id", "phone_number"],
+                "restricted_countries": [],
+                "special_requirements": []
+            },
+            "CM": {  # Cameroon
+                "kyc_required": True,
+                "aml_threshold": 1000000,  # XAF
+                "max_daily_limit": 500000,  # XAF
+                "required_documents": ["national_id"],
+                "restricted_countries": [],
+                "special_requirements": []
+            },
+            "CI": {  # Côte d'Ivoire
+                "kyc_required": True,
+                "aml_threshold": 1000000,  # XOF
+                "max_daily_limit": 500000,  # XOF
+                "required_documents": ["national_id"],
+                "restricted_countries": [],
+                "special_requirements": []
+            },
+            "BJ": {  # Benin
+                "kyc_required": True,
+                "aml_threshold": 1000000,  # XOF
+                "max_daily_limit": 500000,  # XOF
+                "required_documents": ["national_id"],
+                "restricted_countries": [],
+                "special_requirements": []
+            },
+            "TG": {  # Togo
+                "kyc_required": True,
+                "aml_threshold": 1000000,  # XOF
+                "max_daily_limit": 500000,  # XOF
+                "required_documents": ["national_id"],
+                "restricted_countries": [],
+                "special_requirements": []
+            },
+            "SN": {  # Senegal
+                "kyc_required": True,
+                "aml_threshold": 1000000,  # XOF
+                "max_daily_limit": 500000,  # XOF
+                "required_documents": ["national_id"],
+                "restricted_countries": [],
+                "special_requirements": []
+            },
+            "BF": {  # Burkina Faso
+                "kyc_required": True,
+                "aml_threshold": 1000000,  # XOF
+                "max_daily_limit": 500000,  # XOF
+                "required_documents": ["national_id"],
+                "restricted_countries": [],
+                "special_requirements": []
+            },
+            "ML": {  # Mali
+                "kyc_required": True,
+                "aml_threshold": 1000000,  # XOF
+                "max_daily_limit": 500000,  # XOF
+                "required_documents": ["national_id"],
+                "restricted_countries": [],
+                "special_requirements": []
+            },
         }
             
     async def check_travel_rule(self, payment: CrossBorderPayment) -> bool:
@@ -404,6 +493,56 @@ class ComplianceService:
     async def get_supported_countries(self) -> List[Country]:
         """Get list of supported countries with regulations"""
         return list(self.country_regulations.keys())
+
+    def validate_hifi_kyc_completeness(
+        self, person_info, country_code: str
+    ) -> tuple:
+        """
+        Validate that all HIFI-required KYC fields are present on a sender/recipient.
+
+        Args:
+            person_info: SenderInfo or RecipientInfo instance
+            country_code: ISO 3166-1 alpha-2 country code
+
+        Returns:
+            (is_valid, missing_fields): Tuple of bool and list of missing field names
+        """
+        missing = []
+
+        # Required individual fields
+        if not getattr(person_info, "first_name", None) and not getattr(person_info, "name", None):
+            missing.append("first_name")
+        if not getattr(person_info, "last_name", None) and not getattr(person_info, "name", None):
+            missing.append("last_name")
+        if not getattr(person_info, "email", None):
+            missing.append("email")
+        if not getattr(person_info, "phone_number", None):
+            missing.append("phone")
+        if not getattr(person_info, "date_of_birth", None):
+            missing.append("dateOfBirth")
+        if not getattr(person_info, "id_type", None):
+            missing.append("idType")
+        if not getattr(person_info, "id_number", None):
+            missing.append("idNumber")
+
+        # Address fields
+        if not getattr(person_info, "address_line1", None):
+            missing.append("addressLine1")
+        if not getattr(person_info, "city", None):
+            missing.append("city")
+        if not getattr(person_info, "state_province_region", None):
+            missing.append("stateProvinceRegion")
+        if not getattr(person_info, "postal_code", None):
+            missing.append("postalCode")
+
+        # Nigeria-specific
+        if country_code == "NG":
+            if not getattr(person_info, "additional_id_type", None):
+                missing.append("additionalIdType")
+            if not getattr(person_info, "additional_id_number", None):
+                missing.append("additionalIdNumber")
+
+        return (len(missing) == 0, missing)
 
     async def generate_report(self, user_id: UUID, report_type: str, year: int, session: AsyncSession) -> Dict[str, str]:
 

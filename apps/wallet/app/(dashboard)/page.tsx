@@ -32,24 +32,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (isAptosConnected && aptosAccount?.address) {
-      fetchAptosBalance(aptosAccount.address.toString());
+      fetchYieldStats();
     }
   }, [isAptosConnected, aptosAccount]);
-
-  const fetchAptosBalance = async (address: string) => {
-    try {
-      const response = await fetch(`https://api.testnet.aptoslabs.com/v1/accounts/${address}/resource/0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>`);
-      if (response.ok) {
-        const data = await response.json();
-        setAptosBalance(Number(data.data.coin.value) / 100_000_000);
-      } else {
-        setAptosBalance(0);
-      }
-    } catch (e) {
-      console.error("Failed to fetch Aptos balance", e);
-      setAptosBalance(0);
-    }
-  };
 
   const fetchYieldStats = async () => {
     try {

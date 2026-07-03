@@ -2,7 +2,7 @@
 Payment domain models for CAPP cross-border payment system
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Annotated, Dict, List, Optional, Any
@@ -12,7 +12,13 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Chain(str, Enum):
-    """Supported Blockchains"""
+    """
+    Production-ready settlement chains.
+
+    Solana and Stellar are NOT listed here — their clients are simulated mocks
+    gated behind ENABLE_MOCK_CHAINS=true. They will be added once real SDK
+    integration and settlement testing is complete.
+    """
     APTOS = "aptos"
     BASE = "base"
     ARBITRUM = "arbitrum"
@@ -65,6 +71,31 @@ class PaymentMethod(str, Enum):
     CASH_PICKUP = "cash_pickup"
     DIGITAL_WALLET = "digital_wallet"
     CRYPTO = "crypto"
+
+
+class TransactionDirection(str, Enum):
+    """Transaction direction for pay-in/pay-out rails"""
+    PAYIN = "payin"
+    PAYOUT = "payout"
+
+
+class RailProvider(str, Enum):
+    """Payment rail providers (unified rails spanning multiple payment methods)"""
+    HIFI_AFRICA = "hifi_africa"
+    MPESA = "mpesa"
+    MTN = "mtn"
+    AIRTEL = "airtel"
+    ORANGE = "orange"
+    SWIFT = "swift"
+    ACH = "ach"
+
+
+class HifiIdType(str, Enum):
+    """ID types accepted by HIFI Africa Rail"""
+    DRIVERS = "DRIVERS"
+    ID_CARD = "ID_CARD"
+    PASSPORT = "PASSPORT"
+    RESIDENCE_PERMIT = "RESIDENCE_PERMIT"
 
 
 class MMOProvider(str, Enum):
@@ -228,6 +259,9 @@ class PaymentRoute(BaseModel):
     reliability_score: float = Field(ge=0.0, le=1.0)
     total_score: float = Field(ge=0.0, le=1.0)
     
+    # Rail provider (for unified rails like HIFI)
+    rail_provider: Optional[RailProvider] = None
+
     # Cross-Chain Routing
     from_chain: Optional[Chain] = None
     to_chain: Optional[Chain] = None
@@ -269,6 +303,17 @@ class SenderInfo(BaseModel):
     address: Optional[str] = None
     kyc_verified: bool = False
     risk_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    # Extended KYC fields for HIFI Africa Rail
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
+    state_province_region: Optional[str] = None
+    postal_code: Optional[str] = None
+    # Nigeria-specific
+    additional_id_type: Optional[str] = None
+    additional_id_number: Optional[str] = None
 
 
 class RecipientInfo(BaseModel):
@@ -288,6 +333,17 @@ class RecipientInfo(BaseModel):
     mmo_provider: Optional[MMOProvider] = None
     kyc_verified: bool = False
     risk_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    # Extended KYC fields for HIFI Africa Rail
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
+    state_province_region: Optional[str] = None
+    postal_code: Optional[str] = None
+    # Nigeria-specific
+    additional_id_type: Optional[str] = None
+    additional_id_number: Optional[str] = None
 
 
 class CrossBorderPayment(BaseModel):
@@ -326,6 +382,11 @@ class CrossBorderPayment(BaseModel):
     initiated_by: str = Field(default="human", description="'human' or 'agent'")
     workflow_id: Optional[str] = None
     blockchain_tx_hash: Optional[str] = None
+
+    # Rail provider tracking
+    direction: Optional[TransactionDirection] = None
+    rail_provider: Optional[RailProvider] = None
+    provider_transaction_id: Optional[str] = None
     
     # Compliance and security
     compliance_status: str = "pending"
@@ -470,4 +531,11 @@ class PaymentAnalytics(BaseModel):
         json_encoders = {
             Decimal: str,
             datetime: lambda v: v.isoformat()
-        } 
+        }
+
+
+class BusinessInfo(BaseModel):
+    """Business KYC information for HIFI KYB"""
+    business_name: str
+    tax_identification_number: str
+    country: Country

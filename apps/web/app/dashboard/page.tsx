@@ -43,7 +43,7 @@ export default function DashboardPage() {
                         <div className="flex justify-between items-center text-sm p-2 rounded hover:bg-white/5">
                             <div>
                                 <div className="font-medium">USDC Bridge</div>
-                                <div className="text-xs text-muted-foreground">Aptos -> Polygon</div>
+                                <div className="text-xs text-muted-foreground">Aptos {'->'} Polygon</div>
                             </div>
                             <span className="text-emerald-400">Completed</span>
                         </div>

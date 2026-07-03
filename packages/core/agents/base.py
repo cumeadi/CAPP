@@ -16,7 +16,6 @@ from decimal import Decimal
 import structlog
 from pydantic import BaseModel, Field
 
-from packages.core.performance.metrics import MetricsCollector
 
 logger = structlog.get_logger(__name__)
 
@@ -112,7 +111,9 @@ class BaseFinancialAgent(ABC, Generic[T]):
         self._failure_count = 0
         self._last_failure_time: Optional[datetime] = None
         
-        # Metrics collector
+        # Metrics collector — imported lazily to avoid a circular import through
+        # packages.core.performance.tracker → agents.financial_base → agents.base.
+        from packages.core.performance.metrics import MetricsCollector  # noqa: PLC0415
         self.metrics_collector = MetricsCollector()
         
         self.logger.info(

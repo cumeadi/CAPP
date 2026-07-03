@@ -28,7 +28,7 @@ google-generativeai>=0.3.0 # Required for Gemini Provider
 
 # HTTP Client
 aiohttp>=3.9.0
-httpx>=0.25.0
+httpx>=0.23.0,<0.24.0  # Compatible with aptos-sdk==0.6.0
 
 # Data Processing
 numpy>=1.25.0
@@ -99,5 +99,5 @@ locust>=2.17.0
 
 # Production Server
 gunicorn>=21.2.0
-mcp>=1.0.0; python_version >= "3.10"
+# mcp>=1.0.0; python_version >= "3.10"  # Commented: conflicts with aptos-sdk httpx requirements
 passlib>=1.7.4

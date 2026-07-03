@@ -343,3 +343,8 @@ forge-cache/
 forge-out/
 hardhat-cache/
 hardhat-artifacts/
+
+# macOS Finder duplicates (e.g. "launch 2.json", "capp-frontend 2/")
+* 2.*
+* 2/
+* 2

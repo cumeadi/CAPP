@@ -2,16 +2,21 @@ import httpx
 import structlog
 from typing import List, Dict, Any, Optional
 
+from applications.capp.capp.services.circuit_breaker import get_circuit_breaker
+
 logger = structlog.get_logger(__name__)
+
+_breaker = get_circuit_breaker("defillama", threshold=5, timeout=120)
+
 
 class DefiLlamaService:
     """
     Service to fetch real yield opportunities from DefiLlama.
     Base URL: https://yields.llama.fi
     """
-    
+
     BASE_URL = "https://yields.llama.fi"
-    
+
     async def get_yield_opportunities(self, symbol: str = "USDC", chains: List[str] = ["Arbitrum", "Polygon"]) -> List[Dict[str, Any]]:
         """
         Fetch top yield opportunities for a specific asset on specific chains.
@@ -19,7 +24,7 @@ class DefiLlamaService:
         try:
             url = f"{self.BASE_URL}/pools"
             async with httpx.AsyncClient() as client:
-                response = await client.get(url)
+                response = await _breaker.call(lambda: client.get(url))
                 
                 if response.status_code != 200:
                     logger.error("DefiLlama API Error", status=response.status_code)

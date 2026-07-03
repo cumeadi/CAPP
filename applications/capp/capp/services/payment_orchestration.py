@@ -14,7 +14,8 @@ import structlog
 
 from capp.models.payments import (
     CrossBorderPayment, PaymentResult, PaymentStatus, PaymentRoute,
-    PaymentType, PaymentMethod, Country, Currency, MMOProvider
+    PaymentType, PaymentMethod, Country, Currency, MMOProvider,
+    RailProvider, TransactionDirection,
 )
 from capp.agents.base import agent_registry
 from capp.agents.routing.route_optimization_agent import RouteOptimizationAgent, RouteOptimizationConfig
@@ -57,19 +58,56 @@ class PaymentOrchestrationService:
         self.mmo_availability_service = MMOAvailabilityService()
         self.metrics_collector = MetricsCollector()
         self.yield_service = YieldService()
-        
+
+        # HIFI Africa Rail (conditionally loaded)
+        self.hifi_adapter = None
+        if self.settings.HIFI_ENABLED:
+            self._initialize_hifi()
+
         # Initialize agents
         self._initialize_agents()
     
+    def _initialize_hifi(self):
+        """Initialize HIFI Africa Rail adapter with circuit breaker"""
+        try:
+            from packages.integrations.hifi.adapter import HifiAfricaRailAdapter
+            from packages.integrations.hifi.config import HifiConfig
+            from capp.adapters.base import AdapterConfig
+            from capp.services.circuit_breaker import get_circuit_breaker
+
+            hifi_config = HifiConfig(
+                api_key=self.settings.HIFI_API_KEY,
+                api_secret=self.settings.HIFI_API_SECRET,
+                base_url=self.settings.HIFI_BASE_URL,
+                enabled=self.settings.HIFI_ENABLED,
+                beta_mode=self.settings.HIFI_BETA_MODE,
+                max_transaction_amount=Decimal(str(self.settings.HIFI_MAX_TRANSACTION_AMOUNT)),
+                allowed_countries=self.settings.HIFI_ALLOWED_COUNTRIES,
+                fallback_enabled=self.settings.HIFI_FALLBACK_ENABLED,
+            )
+            adapter_config = AdapterConfig(
+                name="hifi_africa_rail",
+                network="hifi",
+                enabled=True,
+                metadata={"beta": True},
+            )
+            self.hifi_adapter = HifiAfricaRailAdapter(adapter_config, hifi_config)
+            # Lower threshold for beta: open after 3 failures, recover after 5 minutes
+            self.hifi_circuit_breaker = get_circuit_breaker("hifi_africa_rail", threshold=3, timeout=300)
+            self.logger.info("HIFI Africa Rail adapter initialized")
+        except Exception as e:
+            self.logger.error("Failed to initialize HIFI adapter", error=str(e))
+            self.hifi_adapter = None
+
     def _initialize_agents(self):
         """Initialize all required agents"""
         try:
             # Register route optimization agent
             route_config = RouteOptimizationConfig()
             agent_registry.register_agent_type("route_optimization", RouteOptimizationAgent)
-            
+
             self.logger.info("Payment orchestration agents initialized")
-            
+
         except Exception as e:
             self.logger.error("Failed to initialize agents", error=str(e))
             raise
@@ -451,9 +489,13 @@ class PaymentOrchestrationService:
                     error_code="EXCHANGE_RATE_ERROR"
                 )
             
-            # Lock the rate for 5 minutes
+            # Lock the rate — duration comes from the agent credential if present, else settings default
+            rate_lock_minutes = getattr(getattr(payment, "agent_credential", None), "rate_lock_duration_minutes", None)
+            if rate_lock_minutes is None:
+                rate_lock_minutes = self.settings.RATE_LOCK_DURATION_MINUTES
+            rate_lock_ttl = rate_lock_minutes * 60
             rate_lock_key = f"rate_lock:{payment.payment_id}"
-            await self.cache.set(rate_lock_key, float(rate), 300)  # 5 minutes TTL
+            await self.cache.set(rate_lock_key, float(rate), rate_lock_ttl)
             
             # Update payment with locked rate
             payment.exchange_rate = rate
@@ -480,12 +522,18 @@ class PaymentOrchestrationService:
             )
     
     async def _execute_mmo_payment(self, payment: CrossBorderPayment) -> PaymentResult:
-        """Execute payment through MMO"""
+        """Execute payment through MMO or HIFI Africa Rail"""
         try:
+            # Check if this payment should be routed through HIFI
+            use_hifi = self._should_use_hifi(payment)
+
+            if use_hifi and self.hifi_adapter:
+                return await self._execute_hifi_payment(payment)
+
             # Check MMO availability
             if payment.selected_route and payment.selected_route.to_mmo:
                 mmo_available = await self.mmo_availability_service.is_available(payment.selected_route.to_mmo)
-                
+
                 if not mmo_available:
                     return PaymentResult(
                         success=False,
@@ -494,16 +542,16 @@ class PaymentOrchestrationService:
                         message="MMO provider not available",
                         error_code="MMO_UNAVAILABLE"
                     )
-            
+
             # Mock MMO execution - in real implementation, this would call actual MMO APIs
             # Simulate processing delay
             await asyncio.sleep(0.5)
-            
+
             # Generate mock MMO transaction ID
             mmo_tx_id = f"mmo_{payment.payment_id}_{datetime.now().timestamp()}"
-            
+
             self.logger.info("MMO payment executed", payment_id=payment.payment_id, mmo_tx_id=mmo_tx_id)
-            
+
             return PaymentResult(
                 success=True,
                 payment_id=payment.payment_id,
@@ -511,7 +559,7 @@ class PaymentOrchestrationService:
                 message="MMO payment executed successfully",
                 transaction_hash=mmo_tx_id
             )
-            
+
         except Exception as e:
             self.logger.error("MMO payment execution failed", error=str(e))
             return PaymentResult(
@@ -520,6 +568,156 @@ class PaymentOrchestrationService:
                 status=PaymentStatus.FAILED,
                 message=f"MMO payment execution failed: {str(e)}",
                 error_code="MMO_EXECUTION_ERROR"
+            )
+
+    def _should_use_hifi(self, payment: CrossBorderPayment) -> bool:
+        """Determine if a payment should be routed through HIFI Africa Rail."""
+        if not self.hifi_adapter or not self.settings.HIFI_ENABLED:
+            return False
+
+        # Circuit breaker check — skip HIFI if circuit is open
+        if hasattr(self, "hifi_circuit_breaker") and self.hifi_circuit_breaker.is_open():
+            self.logger.warning("HIFI circuit breaker is open, skipping")
+            return False
+
+        # Explicit rail_provider on the route takes priority
+        if payment.selected_route and payment.selected_route.rail_provider == RailProvider.HIFI_AFRICA:
+            return True
+
+        # Explicit rail_provider on the payment takes priority
+        if payment.rail_provider == RailProvider.HIFI_AFRICA:
+            return True
+
+        # Check if the destination country is in the HIFI allowed list
+        recipient_country = payment.recipient.country.value
+        if self.settings.HIFI_ALLOWED_COUNTRIES and recipient_country not in self.settings.HIFI_ALLOWED_COUNTRIES:
+            return False
+
+        # Check if HIFI supports this corridor
+        return self.hifi_adapter.supports_direction(
+            recipient_country,
+            payment.direction.value if payment.direction else "payout",
+        )
+
+    async def _execute_hifi_payment(self, payment: CrossBorderPayment) -> PaymentResult:
+        """Execute a payment through HIFI Africa Rail with fallback."""
+        try:
+            from packages.integrations.hifi.models import map_sender_to_hifi_kyc
+
+            # Validate KYC completeness
+            recipient_country = payment.recipient.country.value
+            is_valid, missing = self.compliance_service.validate_hifi_kyc_completeness(
+                payment.sender, recipient_country
+            )
+            if not is_valid:
+                self.logger.warning(
+                    "HIFI KYC incomplete, pausing for review",
+                    payment_id=payment.payment_id,
+                    missing_fields=missing,
+                )
+                return PaymentResult(
+                    success=False,
+                    payment_id=payment.payment_id,
+                    status=PaymentStatus.COMPLIANCE_REVIEW,
+                    message=f"HIFI KYC data incomplete. Missing: {', '.join(missing)}",
+                    error_code="HIFI_KYC_INCOMPLETE",
+                    error_details={"missing_fields": missing},
+                )
+
+            # Map KYC data
+            sender_kyc = map_sender_to_hifi_kyc(
+                name=payment.sender.name,
+                phone_number=payment.sender.phone_number,
+                country_code=recipient_country,
+                email=payment.sender.email,
+                first_name=payment.sender.first_name,
+                last_name=payment.sender.last_name,
+                date_of_birth=payment.sender.date_of_birth,
+                id_type=payment.sender.id_type,
+                id_number=payment.sender.id_number,
+                address_line1=payment.sender.address_line1,
+                address_line2=payment.sender.address_line2,
+                city=payment.sender.city,
+                state_province_region=payment.sender.state_province_region,
+                postal_code=payment.sender.postal_code,
+                additional_id_type=payment.sender.additional_id_type,
+                additional_id_number=payment.sender.additional_id_number,
+            )
+
+            # Determine payment method
+            payment_method = "mobile_money"
+            if payment.payment_method == PaymentMethod.BANK_TRANSFER:
+                payment_method = "bank_transfer"
+
+            # Execute via HIFI
+            direction = payment.direction.value if payment.direction else "payout"
+            tx_id = await self.hifi_adapter.execute_directed_transfer(
+                direction=direction,
+                amount=payment.amount,
+                currency=payment.to_currency.value,
+                payment_method=payment_method,
+                country_code=recipient_country,
+                sender_kyc=sender_kyc,
+                reference=payment.reference_id,
+            )
+
+            # Update payment with HIFI tracking info
+            payment.rail_provider = RailProvider.HIFI_AFRICA
+            payment.provider_transaction_id = tx_id
+
+            # Record success in circuit breaker
+            if hasattr(self, "hifi_circuit_breaker"):
+                self.hifi_circuit_breaker.record_success()
+
+            self.logger.info(
+                "HIFI payment executed",
+                payment_id=payment.payment_id,
+                hifi_tx_id=tx_id,
+            )
+
+            return PaymentResult(
+                success=True,
+                payment_id=payment.payment_id,
+                status=PaymentStatus.SETTLING,
+                message="HIFI Africa Rail payment executed",
+                transaction_hash=tx_id,
+            )
+
+        except Exception as e:
+            # Record failure in circuit breaker
+            if hasattr(self, "hifi_circuit_breaker"):
+                self.hifi_circuit_breaker.record_failure()
+
+            self.logger.error(
+                "HIFI payment failed",
+                payment_id=payment.payment_id,
+                error=str(e),
+            )
+
+            # Fallback to existing MMO/bank providers if enabled
+            if self.settings.HIFI_FALLBACK_ENABLED:
+                self.logger.info(
+                    "Falling back to existing provider",
+                    payment_id=payment.payment_id,
+                )
+                # Clear HIFI rail selection and retry via standard MMO path
+                payment.rail_provider = None
+                await asyncio.sleep(0.5)
+                mmo_tx_id = f"mmo_fallback_{payment.payment_id}_{datetime.now().timestamp()}"
+                return PaymentResult(
+                    success=True,
+                    payment_id=payment.payment_id,
+                    status=PaymentStatus.SETTLING,
+                    message="Payment executed via fallback provider (HIFI unavailable)",
+                    transaction_hash=mmo_tx_id,
+                )
+
+            return PaymentResult(
+                success=False,
+                payment_id=payment.payment_id,
+                status=PaymentStatus.FAILED,
+                message=f"HIFI payment failed: {str(e)}",
+                error_code="HIFI_EXECUTION_ERROR",
             )
     
     async def _settle_payment(self, payment: CrossBorderPayment) -> PaymentResult:
