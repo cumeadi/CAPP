@@ -4,34 +4,35 @@ This document describes how to manage database migrations for the CAPP (Canza Au
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Prerequisites](#prerequisites)
-- [Initial Setup](#initial-setup)
-- [Common Migration Commands](#common-migration-commands)
-- [Creating Migrations](#creating-migrations)
-- [Applying Migrations](#applying-migrations)
-- [Rolling Back Migrations](#rolling-back-migrations)
-- [Migration Best Practices](#migration-best-practices)
-- [Troubleshooting](#troubleshooting)
+* [Overview](MIGRATIONS.md#overview)
+* [Prerequisites](MIGRATIONS.md#prerequisites)
+* [Initial Setup](MIGRATIONS.md#initial-setup)
+* [Common Migration Commands](MIGRATIONS.md#common-migration-commands)
+* [Creating Migrations](MIGRATIONS.md#creating-migrations)
+* [Applying Migrations](MIGRATIONS.md#applying-migrations)
+* [Rolling Back Migrations](MIGRATIONS.md#rolling-back-migrations)
+* [Migration Best Practices](MIGRATIONS.md#migration-best-practices)
+* [Troubleshooting](MIGRATIONS.md#troubleshooting)
 
 ## Overview
 
 CAPP uses **Alembic** for database schema management and migrations. Alembic is a lightweight database migration tool for SQLAlchemy that provides:
 
-- Automatic migration generation from model changes
-- Version control for database schemas
-- Safe upgrade and downgrade capabilities
-- Support for multiple database environments
+* Automatic migration generation from model changes
+* Version control for database schemas
+* Safe upgrade and downgrade capabilities
+* Support for multiple database environments
 
 ## Prerequisites
 
 Before working with migrations, ensure you have:
 
 1. **PostgreSQL** installed and running
-2. **Python dependencies** installed:
-   ```bash
-   pip install -r applications/capp/requirements.txt
-   ```
+2.  **Python dependencies** installed:
+
+    ```bash
+    pip install -r applications/capp/requirements.txt
+    ```
 3. **Database created** and accessible
 4. **Environment variables** configured (see `.env` file)
 
@@ -42,11 +43,13 @@ Before working with migrations, ensure you have:
 The database URL is configured in two places:
 
 **For the application** (`applications/capp/capp/config/settings.py`):
+
 ```python
 DATABASE_URL = "postgresql+asyncpg://capp_user:REDACTED_DB_PASSWORD@localhost/capp_db"
 ```
 
 **For Alembic** (`alembic.ini`):
+
 ```ini
 sqlalchemy.url = postgresql://capp_user:REDACTED_DB_PASSWORD@localhost/capp_db
 ```
@@ -112,11 +115,13 @@ alembic revision --autogenerate -m "description of changes"
 ```
 
 **Example:**
+
 ```bash
 ./scripts/create_migration.sh "add user preferences table"
 ```
 
 This will:
+
 1. Compare your SQLAlchemy models with the current database schema
 2. Generate a migration file in `alembic/versions/`
 3. Include upgrade and downgrade operations
@@ -137,11 +142,11 @@ This creates a blank migration file that you can edit manually.
 
 Generated migrations are in `alembic/versions/`. Check:
 
-- Column types are correct
-- Indexes are created appropriately
-- Foreign keys are handled properly
-- Default values are set correctly
-- No data loss will occur
+* Column types are correct
+* Indexes are created appropriately
+* Foreign keys are handled properly
+* Default values are set correctly
+* No data loss will occur
 
 ## Applying Migrations
 
@@ -160,6 +165,7 @@ alembic upgrade <revision>
 ```
 
 **Example:**
+
 ```bash
 alembic upgrade 0002
 ```
@@ -187,6 +193,7 @@ alembic downgrade <revision>
 ```
 
 **Example:**
+
 ```bash
 alembic downgrade 0001
 ```
@@ -211,10 +218,10 @@ alembic downgrade base
 
 Auto-generation is smart but not perfect. Review all generated migrations to ensure:
 
-- No accidental table drops
-- Renamed columns are detected correctly (not dropped and re-created)
-- Indexes are created efficiently
-- Data migrations are handled properly
+* No accidental table drops
+* Renamed columns are detected correctly (not dropped and re-created)
+* Indexes are created efficiently
+* Data migrations are handled properly
 
 ### 2. Test Migrations Before Production
 
@@ -238,8 +245,8 @@ alembic upgrade head
 
 Create focused migrations for specific changes:
 
-- ✅ Good: "add email index to users table"
-- ❌ Bad: "update database schema for Q4 features"
+* ✅ Good: "add email index to users table"
+* ❌ Bad: "update database schema for Q4 features"
 
 ### 4. Never Edit Applied Migrations
 
@@ -280,12 +287,12 @@ The current database schema includes these tables:
 
 1. **users** - User accounts with authentication and KYC information
 2. **payments** - Payment transactions and their details
-3. **payment_routes** - Available payment corridors and routes
-4. **liquidity_pools** - Liquidity pools for currency pairs
-5. **liquidity_reservations** - Reserved liquidity for pending payments
-6. **agent_activities** - Agent interaction logs and performance metrics
-7. **exchange_rates** - Historical exchange rate data
-8. **compliance_records** - AML/KYC compliance and audit logs
+3. **payment\_routes** - Available payment corridors and routes
+4. **liquidity\_pools** - Liquidity pools for currency pairs
+5. **liquidity\_reservations** - Reserved liquidity for pending payments
+6. **agent\_activities** - Agent interaction logs and performance metrics
+7. **exchange\_rates** - Historical exchange rate data
+8. **compliance\_records** - AML/KYC compliance and audit logs
 
 See `applications/capp/capp/core/database.py` for detailed model definitions.
 
@@ -314,16 +321,16 @@ This means no migrations have been created yet. Create the initial migration:
 
 Check your database connection settings:
 
-1. Verify PostgreSQL is running:
-   ```bash
-   pg_isready -h localhost -p 5432
-   ```
+1.  Verify PostgreSQL is running:
 
-2. Test connection manually:
-   ```bash
-   psql -h localhost -U capp_user -d capp_db
-   ```
+    ```bash
+    pg_isready -h localhost -p 5432
+    ```
+2.  Test connection manually:
 
+    ```bash
+    psql -h localhost -U capp_user -d capp_db
+    ```
 3. Check environment variables in `.env` file
 
 ### "Table already exists" Errors
@@ -392,6 +399,7 @@ Run the full migration test suite:
 ```
 
 This script will:
+
 1. Check database connectivity
 2. Show current migration status
 3. Apply all migrations
@@ -408,10 +416,10 @@ Quickly create a new migration:
 
 ## Additional Resources
 
-- [Alembic Documentation](https://alembic.sqlalchemy.org/)
-- [SQLAlchemy Documentation](https://docs.sqlalchemy.org/)
-- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
-- [CAPP Database Models](../applications/capp/capp/core/database.py)
+* [Alembic Documentation](https://alembic.sqlalchemy.org/)
+* [SQLAlchemy Documentation](https://docs.sqlalchemy.org/)
+* [PostgreSQL Documentation](https://www.postgresql.org/docs/)
+* [CAPP Database Models](https://github.com/cumeadi/CAPP/blob/main/applications/capp/capp/core/database.py)
 
 ## Support
 
@@ -422,8 +430,6 @@ For migration issues or questions:
 3. Consult the team's development channel
 4. Open an issue in the project repository
 
----
+***
 
-**Last Updated:** 2025-10-25
-**Alembic Version:** 1.13.0+
-**Database:** PostgreSQL 13+
+**Last Updated:** 2025-10-25 **Alembic Version:** 1.13.0+ **Database:** PostgreSQL 13+

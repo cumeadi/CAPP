@@ -6,11 +6,11 @@ A complete reference implementation of the Canza Autonomous Payment Protocol (CA
 
 This reference implementation demonstrates a complete payment processing system built with the Canza Platform:
 
-- **End-to-End Payment Flow**: Complete payment processing from request to settlement
-- **Multi-Agent Orchestration**: Intelligent agents coordinating payment optimization
-- **Real-Time Optimization**: Route optimization and cost reduction
-- **API Integration**: RESTful API with comprehensive endpoints
-- **Frontend Demo**: React-based user interface
+* **End-to-End Payment Flow**: Complete payment processing from request to settlement
+* **Multi-Agent Orchestration**: Intelligent agents coordinating payment optimization
+* **Real-Time Optimization**: Route optimization and cost reduction
+* **API Integration**: RESTful API with comprehensive endpoints
+* **Frontend Demo**: React-based user interface
 
 ## 🏗️ Architecture
 
@@ -39,10 +39,10 @@ CAPP Reference Implementation
 
 ### Prerequisites
 
-- Python 3.9+
-- Node.js 18+
-- Redis (optional, uses mock for development)
-- PostgreSQL (optional, uses mock for development)
+* Python 3.9+
+* Node.js 18+
+* Redis (optional, uses mock for development)
+* PostgreSQL (optional, uses mock for development)
 
 ### Installation
 
@@ -68,33 +68,33 @@ npm start
 
 ### Access Points
 
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/docs
+* **Frontend**: http://localhost:3000
+* **Backend API**: http://localhost:8000
+* **API Documentation**: http://localhost:8000/docs
 
 ## 📊 Features
 
 ### Payment Processing
 
-- **Multi-Currency Support**: 42+ African currencies
-- **Route Optimization**: AI-powered route selection
-- **Cost Reduction**: Average 85% cost savings
-- **Real-Time Settlement**: Sub-2-second settlement times
+* **Multi-Currency Support**: 42+ African currencies
+* **Route Optimization**: AI-powered route selection
+* **Cost Reduction**: Average 85% cost savings
+* **Real-Time Settlement**: Sub-2-second settlement times
 
 ### Agent System
 
-- **Route Agent**: Optimizes payment routes
-- **Cost Agent**: Minimizes transaction costs
-- **Compliance Agent**: Ensures regulatory compliance
-- **Liquidity Agent**: Manages liquidity pools
-- **Settlement Agent**: Handles blockchain settlement
+* **Route Agent**: Optimizes payment routes
+* **Cost Agent**: Minimizes transaction costs
+* **Compliance Agent**: Ensures regulatory compliance
+* **Liquidity Agent**: Manages liquidity pools
+* **Settlement Agent**: Handles blockchain settlement
 
 ### Analytics
 
-- **Real-Time Metrics**: Live performance monitoring
-- **Cost Analytics**: Detailed cost breakdown
-- **Performance Tracking**: Agent performance metrics
-- **Settlement Analytics**: Settlement success rates
+* **Real-Time Metrics**: Live performance monitoring
+* **Cost Analytics**: Detailed cost breakdown
+* **Performance Tracking**: Agent performance metrics
+* **Settlement Analytics**: Settlement success rates
 
 ## 🔧 Configuration
 
@@ -129,38 +129,38 @@ AGENT_CONSENSUS_THRESHOLD=0.7
 
 ### Cost Savings
 
-- **Average Cost Reduction**: 85%
-- **Route Optimization**: 91% efficiency improvement
-- **Settlement Speed**: 1.5 seconds average
-- **Success Rate**: 99.7%
+* **Average Cost Reduction**: 85%
+* **Route Optimization**: 91% efficiency improvement
+* **Settlement Speed**: 1.5 seconds average
+* **Success Rate**: 99.7%
 
 ### Scalability
 
-- **Concurrent Payments**: 10,000+ per second
-- **Agent Response Time**: <100ms average
-- **API Latency**: <50ms p95
-- **Uptime**: 99.9%
+* **Concurrent Payments**: 10,000+ per second
+* **Agent Response Time**: <100ms average
+* **API Latency**: <50ms p95
+* **Uptime**: 99.9%
 
 ## 🔍 API Endpoints
 
 ### Payment Endpoints
 
-- `POST /api/v1/payments/send` - Send payment
-- `GET /api/v1/payments/{payment_id}/status` - Payment status
-- `GET /api/v1/payments/routes` - Available routes
-- `GET /api/v1/payments/rates` - Exchange rates
+* `POST /api/v1/payments/send` - Send payment
+* `GET /api/v1/payments/{payment_id}/status` - Payment status
+* `GET /api/v1/payments/routes` - Available routes
+* `GET /api/v1/payments/rates` - Exchange rates
 
 ### Agent Endpoints
 
-- `GET /api/v1/agents/status` - Agent status
-- `POST /api/v1/agents/restart` - Restart agent
-- `GET /api/v1/agents/metrics` - Agent metrics
+* `GET /api/v1/agents/status` - Agent status
+* `POST /api/v1/agents/restart` - Restart agent
+* `GET /api/v1/agents/metrics` - Agent metrics
 
 ### Analytics Endpoints
 
-- `GET /api/v1/analytics/cost-savings` - Cost savings data
-- `GET /api/v1/analytics/performance` - Performance metrics
-- `GET /api/v1/analytics/settlement` - Settlement analytics
+* `GET /api/v1/analytics/cost-savings` - Cost savings data
+* `GET /api/v1/analytics/performance` - Performance metrics
+* `GET /api/v1/analytics/settlement` - Settlement analytics
 
 ## 🧪 Testing
 
@@ -181,17 +181,17 @@ pytest --cov=capp --cov-report=html
 
 ### Test Categories
 
-- **Unit Tests**: Individual component testing
-- **Integration Tests**: End-to-end flow testing
-- **Performance Tests**: Load and stress testing
-- **Agent Tests**: Agent behavior testing
+* **Unit Tests**: Individual component testing
+* **Integration Tests**: End-to-end flow testing
+* **Performance Tests**: Load and stress testing
+* **Agent Tests**: Agent behavior testing
 
 ## 📖 Documentation
 
-- [User Guide](user-guide.md)
-- [API Reference](api-reference.md)
-- [Deployment Guide](deployment.md)
-- [Troubleshooting](troubleshooting.md)
+* [User Guide](https://github.com/cumeadi/CAPP/blob/main/examples/capp_reference/user-guide.md)
+* [API Reference](https://github.com/cumeadi/CAPP/blob/main/examples/capp_reference/api-reference.md)
+* [Deployment Guide](https://github.com/cumeadi/CAPP/blob/main/examples/capp_reference/deployment.md)
+* [Troubleshooting](https://github.com/cumeadi/CAPP/blob/main/examples/capp_reference/troubleshooting.md)
 
 ## 🤝 Contributing
 
@@ -199,4 +199,4 @@ This reference implementation serves as a template for building payment systems 
 
 ## 📄 License
 
-This reference implementation is licensed under the MIT License. 
+This reference implementation is licensed under the MIT License.

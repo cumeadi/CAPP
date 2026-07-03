@@ -10,37 +10,37 @@ This directory contains examples of different types of custom agents:
 
 Advanced routing algorithms for payment optimization:
 
-- **ML-Based Router**: Machine learning-powered route selection
-- **Cost-Aware Router**: Route selection based on cost optimization
-- **Speed-Optimized Router**: Route selection for fastest settlement
-- **Compliance Router**: Route selection ensuring regulatory compliance
+* **ML-Based Router**: Machine learning-powered route selection
+* **Cost-Aware Router**: Route selection based on cost optimization
+* **Speed-Optimized Router**: Route selection for fastest settlement
+* **Compliance Router**: Route selection ensuring regulatory compliance
 
 ### 2. Cost Analysis Agents
 
 Specialized agents for cost optimization:
 
-- **Dynamic Pricing Agent**: Real-time pricing optimization
-- **Bulk Discount Agent**: Volume-based discount calculation
-- **Currency Arbitrage Agent**: Cross-currency optimization
-- **Fee Optimization Agent**: Transaction fee minimization
+* **Dynamic Pricing Agent**: Real-time pricing optimization
+* **Bulk Discount Agent**: Volume-based discount calculation
+* **Currency Arbitrage Agent**: Cross-currency optimization
+* **Fee Optimization Agent**: Transaction fee minimization
 
 ### 3. Compliance Agents
 
 Regulatory compliance automation:
 
-- **KYC Agent**: Know Your Customer verification
-- **AML Agent**: Anti-Money Laundering screening
-- **Sanctions Agent**: Sanctions list checking
-- **Regulatory Agent**: Country-specific compliance
+* **KYC Agent**: Know Your Customer verification
+* **AML Agent**: Anti-Money Laundering screening
+* **Sanctions Agent**: Sanctions list checking
+* **Regulatory Agent**: Country-specific compliance
 
 ### 4. Liquidity Management Agents
 
 Dynamic liquidity optimization:
 
-- **Pool Manager Agent**: Liquidity pool management
-- **Reservation Agent**: Liquidity reservation optimization
-- **Rebalancing Agent**: Automatic pool rebalancing
-- **Risk Manager Agent**: Liquidity risk assessment
+* **Pool Manager Agent**: Liquidity pool management
+* **Reservation Agent**: Liquidity reservation optimization
+* **Rebalancing Agent**: Automatic pool rebalancing
+* **Risk Manager Agent**: Liquidity risk assessment
 
 ## 🚀 Getting Started
 
@@ -106,31 +106,31 @@ class AdvancedPaymentSystem:
 
 ### Route Optimization
 
-- `ml_route_agent.py` - Machine learning-based routing
-- `cost_aware_router.py` - Cost-optimized routing
-- `speed_optimized_router.py` - Speed-optimized routing
-- `compliance_router.py` - Compliance-aware routing
+* `ml_route_agent.py` - Machine learning-based routing
+* `cost_aware_router.py` - Cost-optimized routing
+* `speed_optimized_router.py` - Speed-optimized routing
+* `compliance_router.py` - Compliance-aware routing
 
 ### Cost Analysis
 
-- `dynamic_pricing_agent.py` - Dynamic pricing optimization
-- `bulk_discount_agent.py` - Volume-based discounts
-- `currency_arbitrage_agent.py` - Cross-currency optimization
-- `fee_optimization_agent.py` - Fee minimization
+* `dynamic_pricing_agent.py` - Dynamic pricing optimization
+* `bulk_discount_agent.py` - Volume-based discounts
+* `currency_arbitrage_agent.py` - Cross-currency optimization
+* `fee_optimization_agent.py` - Fee minimization
 
 ### Compliance
 
-- `kyc_agent.py` - KYC verification automation
-- `aml_agent.py` - AML screening
-- `sanctions_agent.py` - Sanctions checking
-- `regulatory_agent.py` - Regulatory compliance
+* `kyc_agent.py` - KYC verification automation
+* `aml_agent.py` - AML screening
+* `sanctions_agent.py` - Sanctions checking
+* `regulatory_agent.py` - Regulatory compliance
 
 ### Liquidity Management
 
-- `pool_manager_agent.py` - Liquidity pool management
-- `reservation_agent.py` - Liquidity reservation
-- `rebalancing_agent.py` - Pool rebalancing
-- `risk_manager_agent.py` - Risk assessment
+* `pool_manager_agent.py` - Liquidity pool management
+* `reservation_agent.py` - Liquidity reservation
+* `rebalancing_agent.py` - Pool rebalancing
+* `risk_manager_agent.py` - Risk assessment
 
 ## 🧪 Testing Custom Agents
 
@@ -217,10 +217,10 @@ config = AgentConfig(
 
 ## 📖 Documentation
 
-- [Agent Development Guide](../../docs/sdk/agent-development.md)
-- [Custom Agent Patterns](../../docs/sdk/custom-agents.md)
-- [Testing Guide](../../docs/sdk/testing.md)
-- [Performance Optimization](../../docs/sdk/performance.md)
+* [Agent Development Guide](https://github.com/cumeadi/CAPP/blob/main/docs/sdk/agent-development.md)
+* [Custom Agent Patterns](https://github.com/cumeadi/CAPP/blob/main/docs/sdk/custom-agents.md)
+* [Testing Guide](https://github.com/cumeadi/CAPP/blob/main/docs/sdk/testing.md)
+* [Performance Optimization](https://github.com/cumeadi/CAPP/blob/main/docs/sdk/performance.md)
 
 ## 🤝 Contributing
 
@@ -234,4 +234,4 @@ We welcome contributions of new custom agent examples! Please:
 
 ## 📄 License
 
-Custom agent examples are licensed under the MIT License. 
+Custom agent examples are licensed under the MIT License.

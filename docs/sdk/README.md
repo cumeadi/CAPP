@@ -10,21 +10,21 @@ The Canza Agent Framework SDK is a comprehensive developer toolkit that enables 
 
 The Canza Agent Framework SDK is a Python-based toolkit that provides:
 
-- **Agent Development Framework** - Build custom financial agents
-- **Multi-Agent Orchestration** - Coordinate multiple specialized agents
-- **Integration Helpers** - Pre-built connectors for payment providers
-- **Performance Optimization** - Built-in optimization algorithms
-- **Testing Framework** - Comprehensive testing and validation tools
+* **Agent Development Framework** - Build custom financial agents
+* **Multi-Agent Orchestration** - Coordinate multiple specialized agents
+* **Integration Helpers** - Pre-built connectors for payment providers
+* **Performance Optimization** - Built-in optimization algorithms
+* **Testing Framework** - Comprehensive testing and validation tools
 
 ### **Key Benefits**
 
-| Benefit | Description | Impact |
-|---------|-------------|--------|
-| **91% Cost Reduction** | Proven optimization algorithms | Significant cost savings |
-| **1.5s Processing** | Sub-second transaction processing | Improved user experience |
-| **95%+ Success Rate** | Reliable multi-agent coordination | Reduced failures |
-| **Easy Integration** | Simple APIs and pre-built connectors | Faster development |
-| **Enterprise Ready** | Production-grade security and compliance | Enterprise adoption |
+| Benefit                | Description                              | Impact                   |
+| ---------------------- | ---------------------------------------- | ------------------------ |
+| **91% Cost Reduction** | Proven optimization algorithms           | Significant cost savings |
+| **1.5s Processing**    | Sub-second transaction processing        | Improved user experience |
+| **95%+ Success Rate**  | Reliable multi-agent coordination        | Reduced failures         |
+| **Easy Integration**   | Simple APIs and pre-built connectors     | Faster development       |
+| **Enterprise Ready**   | Production-grade security and compliance | Enterprise adoption      |
 
 ## 🚀 **Quick Start**
 
@@ -118,33 +118,39 @@ The SDK is built around a sophisticated multi-agent system where specialized age
 ### **Agent Types**
 
 #### **Payment Optimizer Agent**
-- **Purpose**: Route optimization and cost reduction
-- **Capabilities**: Multi-provider routing, cost analysis, performance optimization
-- **Performance**: 91% cost reduction, 1.5s processing time
+
+* **Purpose**: Route optimization and cost reduction
+* **Capabilities**: Multi-provider routing, cost analysis, performance optimization
+* **Performance**: 91% cost reduction, 1.5s processing time
 
 #### **Compliance Agent**
-- **Purpose**: Regulatory compliance and risk assessment
-- **Capabilities**: KYC verification, AML screening, sanctions checking
-- **Performance**: 100% compliance rate, real-time processing
+
+* **Purpose**: Regulatory compliance and risk assessment
+* **Capabilities**: KYC verification, AML screening, sanctions checking
+* **Performance**: 100% compliance rate, real-time processing
 
 #### **Risk Assessment Agent**
-- **Purpose**: Transaction risk evaluation
-- **Capabilities**: Risk scoring, fraud detection, pattern analysis
-- **Performance**: 95%+ accuracy, <100ms assessment
+
+* **Purpose**: Transaction risk evaluation
+* **Capabilities**: Risk scoring, fraud detection, pattern analysis
+* **Performance**: 95%+ accuracy, <100ms assessment
 
 #### **Settlement Agent**
-- **Purpose**: Payment execution and settlement
-- **Capabilities**: Multi-provider settlement, batch processing, reconciliation
-- **Performance**: 99.9% success rate, real-time settlement
+
+* **Purpose**: Payment execution and settlement
+* **Capabilities**: Multi-provider settlement, batch processing, reconciliation
+* **Performance**: 99.9% success rate, real-time settlement
 
 #### **Liquidity Agent**
-- **Purpose**: Liquidity management and optimization
-- **Capabilities**: Pool management, rebalancing, optimization
-- **Performance**: Optimal liquidity utilization, automated management
+
+* **Purpose**: Liquidity management and optimization
+* **Capabilities**: Pool management, rebalancing, optimization
+* **Performance**: Optimal liquidity utilization, automated management
 
 ### **Framework Components**
 
 #### **FinancialFramework**
+
 The main orchestrator that coordinates all agents and manages the optimization process.
 
 ```python
@@ -157,6 +163,7 @@ framework = FinancialFramework(
 ```
 
 #### **Agent Factory**
+
 Factory functions for creating specialized agents with optimal configurations.
 
 ```python
@@ -169,6 +176,7 @@ risk_agent = RiskAgent(risk_tolerance="moderate")
 ```
 
 #### **Integration Helpers**
+
 Pre-built connectors for external services and payment providers.
 
 ```python
@@ -189,6 +197,7 @@ blockchain = setup_blockchain_integration()
 The SDK provides multiple optimization strategies to meet different requirements:
 
 #### **Cost-First Optimization**
+
 Maximizes cost savings while maintaining acceptable speed and reliability.
 
 ```python
@@ -199,6 +208,7 @@ payment_agent = PaymentAgent(
 ```
 
 #### **Speed-First Optimization**
+
 Minimizes processing time for urgent transactions.
 
 ```python
@@ -209,6 +219,7 @@ payment_agent = PaymentAgent(
 ```
 
 #### **Reliability-First Optimization**
+
 Maximizes success rate and reliability.
 
 ```python
@@ -219,6 +230,7 @@ payment_agent = PaymentAgent(
 ```
 
 #### **Balanced Optimization**
+
 Optimal trade-offs between cost, speed, and reliability.
 
 ```python
@@ -232,10 +244,10 @@ payment_agent = PaymentAgent(
 
 The SDK includes built-in learning mechanisms that continuously improve performance:
 
-- **Real-time Learning** - Agents learn from each transaction
-- **Historical Analysis** - Pattern recognition and optimization
-- **Predictive Modeling** - Future performance prediction
-- **Adaptive Algorithms** - Self-optimizing systems
+* **Real-time Learning** - Agents learn from each transaction
+* **Historical Analysis** - Pattern recognition and optimization
+* **Predictive Modeling** - Future performance prediction
+* **Adaptive Algorithms** - Self-optimizing systems
 
 ```python
 # Enable learning
@@ -250,20 +262,22 @@ payment_agent = PaymentAgent(
 
 ### **System Requirements**
 
-- **Python**: 3.8 or higher
-- **Redis**: 6.0 or higher (for caching and state management)
-- **Memory**: 2GB RAM minimum, 8GB recommended
-- **Storage**: 1GB disk space
-- **Network**: Internet connection for external APIs
+* **Python**: 3.8 or higher
+* **Redis**: 6.0 or higher (for caching and state management)
+* **Memory**: 2GB RAM minimum, 8GB recommended
+* **Storage**: 1GB disk space
+* **Network**: Internet connection for external APIs
 
 ### **Installation Options**
 
 #### **Standard Installation**
+
 ```bash
 pip install canza-agents
 ```
 
 #### **Development Installation**
+
 ```bash
 git clone https://github.com/canza/canza-agents.git
 cd canza-agents
@@ -271,6 +285,7 @@ pip install -e .
 ```
 
 #### **Docker Installation**
+
 ```bash
 docker pull canza/canza-agents:latest
 docker run -p 8000:8000 canza/canza-agents:latest
@@ -279,6 +294,7 @@ docker run -p 8000:8000 canza/canza-agents:latest
 ### **Configuration**
 
 #### **Environment Variables**
+
 ```bash
 # Framework configuration
 CANZA_REGION=africa
@@ -297,6 +313,7 @@ MTN_API_KEY=your_key
 ```
 
 #### **Configuration File**
+
 ```python
 from canza_agents import FrameworkConfig
 
@@ -495,19 +512,19 @@ asyncio.create_task(monitor_performance())
 
 ### **Security Features**
 
-- **End-to-End Encryption** - All data encrypted in transit and at rest
-- **Multi-Factor Authentication** - Secure access control
-- **Audit Logging** - Comprehensive audit trails
-- **Penetration Testing** - Regular security assessments
-- **SOC 2 Compliance** - Enterprise security standards
+* **End-to-End Encryption** - All data encrypted in transit and at rest
+* **Multi-Factor Authentication** - Secure access control
+* **Audit Logging** - Comprehensive audit trails
+* **Penetration Testing** - Regular security assessments
+* **SOC 2 Compliance** - Enterprise security standards
 
 ### **Compliance Support**
 
-- **AML/KYC** - Anti-money laundering and know-your-customer
-- **Sanctions Screening** - Real-time sanctions monitoring
-- **Regulatory Reporting** - Automated compliance reporting
-- **Data Privacy** - GDPR and local privacy compliance
-- **Financial Regulations** - Banking and financial services compliance
+* **AML/KYC** - Anti-money laundering and know-your-customer
+* **Sanctions Screening** - Real-time sanctions monitoring
+* **Regulatory Reporting** - Automated compliance reporting
+* **Data Privacy** - GDPR and local privacy compliance
+* **Financial Regulations** - Banking and financial services compliance
 
 ## 🧪 **Testing & Validation**
 
@@ -586,6 +603,7 @@ async def performance_test():
 ### **Common Issues**
 
 #### **Import Errors**
+
 ```bash
 # Ensure SDK is installed correctly
 pip install canza-agents
@@ -595,6 +613,7 @@ python -c "import canza_agents; print(canza_agents.__version__)"
 ```
 
 #### **Redis Connection Issues**
+
 ```bash
 # Start Redis server
 redis-server
@@ -604,6 +623,7 @@ redis-cli ping
 ```
 
 #### **Configuration Issues**
+
 ```python
 # Use default configuration for testing
 framework = FinancialFramework()  # Uses defaults
@@ -614,6 +634,7 @@ logging.basicConfig(level=logging.DEBUG)
 ```
 
 #### **Performance Issues**
+
 ```python
 # Check system resources
 import psutil
@@ -649,21 +670,21 @@ framework = FinancialFramework(
 
 ### **Learning Path**
 
-1. **[Quick Start](examples/quickstart/)** - 5-minute tutorial
-2. **[Custom Agents](examples/custom_agents/)** - Build custom agents
-3. **[Integrations](examples/integrations/)** - Connect external systems
-4. **[Industry Examples](examples/industry/)** - Real-world use cases
-5. **[API Reference](api.md)** - Complete API documentation
+1. [**Quick Start**](https://github.com/cumeadi/CAPP/blob/main/docs/sdk/examples/quickstart/README.md) - 5-minute tutorial
+2. [**Custom Agents**](https://github.com/cumeadi/CAPP/blob/main/docs/sdk/examples/custom_agents/README.md) - Build custom agents
+3. [**Integrations**](https://github.com/cumeadi/CAPP/blob/main/docs/sdk/examples/integrations/README.md) - Connect external systems
+4. [**Industry Examples**](https://github.com/cumeadi/CAPP/blob/main/docs/sdk/examples/industry/README.md) - Real-world use cases
+5. [**API Reference**](https://github.com/cumeadi/CAPP/blob/main/docs/sdk/api.md) - Complete API documentation
 
 ### **Resources**
 
-- **[Documentation](https://docs.canza.com)** - Comprehensive guides
-- **[Examples](https://github.com/canza/canza-agents/examples)** - Working code examples
-- **[API Reference](https://docs.canza.com/api)** - Complete API documentation
-- **[Community](https://discord.gg/canza)** - Developer community
-- **[Support](mailto:support@canza.com)** - Enterprise support
+* [**Documentation**](https://docs.canza.com) - Comprehensive guides
+* [**Examples**](https://github.com/canza/canza-agents/examples) - Working code examples
+* [**API Reference**](https://docs.canza.com/api) - Complete API documentation
+* [**Community**](https://discord.gg/canza) - Developer community
+* [**Support**](mailto:support@canza.com) - Enterprise support
 
----
+***
 
 **🎉 Ready to achieve 91% cost reduction with intelligent multi-agent orchestration?**
 
@@ -671,4 +692,4 @@ framework = FinancialFramework(
 
 **Built with ❤️ by the Canza Team**
 
-*Enterprise-grade financial agent framework for the modern world.* 
+_Enterprise-grade financial agent framework for the modern world._

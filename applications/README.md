@@ -19,22 +19,22 @@ The **Canza Autonomous Payment Protocol (CAPP)** is the flagship application dem
 
 ### Features
 
-- **End-to-End Payment Processing**: Complete payment flow from request to settlement
-- **AI Agent Orchestration**: Intelligent agents coordinate payment optimization
-- **Real-Time Optimization**: Route optimization and cost reduction
-- **Multi-Currency Support**: 42+ African currencies
-- **Blockchain Integration**: Aptos blockchain settlement
-- **Mobile Money Integration**: USSD, SMS, and API connections
-- **Analytics Dashboard**: Real-time metrics and insights
+* **End-to-End Payment Processing**: Complete payment flow from request to settlement
+* **AI Agent Orchestration**: Intelligent agents coordinate payment optimization
+* **Real-Time Optimization**: Route optimization and cost reduction
+* **Multi-Currency Support**: 42+ African currencies
+* **Blockchain Integration**: Aptos blockchain settlement
+* **Mobile Money Integration**: USSD, SMS, and API connections
+* **Analytics Dashboard**: Real-time metrics and insights
 
 ### Architecture
 
-- **Backend**: FastAPI-based REST API with async processing
-- **Frontend**: React-based user interface with real-time updates
-- **Agents**: Autonomous payment optimization agents
-- **Database**: PostgreSQL with async SQLAlchemy
-- **Cache**: Redis for performance optimization
-- **Monitoring**: Prometheus metrics and structured logging
+* **Backend**: FastAPI-based REST API with async processing
+* **Frontend**: React-based user interface with real-time updates
+* **Agents**: Autonomous payment optimization agents
+* **Database**: PostgreSQL with async SQLAlchemy
+* **Cache**: Redis for performance optimization
+* **Monitoring**: Prometheus metrics and structured logging
 
 ### Quick Start
 
@@ -51,17 +51,17 @@ npm start
 
 ### API Endpoints
 
-- `GET /health` - Health check
-- `POST /api/v1/payments/send` - Send payment
-- `GET /api/v1/payments/{payment_id}/status` - Payment status
-- `GET /api/v1/payments/routes` - Available routes
-- `GET /api/v1/payments/rates` - Exchange rates
+* `GET /health` - Health check
+* `POST /api/v1/payments/send` - Send payment
+* `GET /api/v1/payments/{payment_id}/status` - Payment status
+* `GET /api/v1/payments/routes` - Available routes
+* `GET /api/v1/payments/rates` - Exchange rates
 
 ### Documentation
 
-- [User Guide](capp/docs/user-guide.md)
-- [API Reference](capp/docs/api-reference.md)
-- [Deployment Guide](capp/docs/deployment.md)
+* [User Guide](https://github.com/cumeadi/CAPP/blob/main/applications/capp/docs/user-guide.md)
+* [API Reference](https://github.com/cumeadi/CAPP/blob/main/applications/capp/docs/api-reference.md)
+* [Deployment Guide](https://github.com/cumeadi/CAPP/blob/main/applications/capp/docs/deployment.md)
 
 ## 🚀 Building New Applications
 
@@ -88,4 +88,4 @@ applications/my-app/
 
 ## 📄 License
 
-Applications are licensed under the MIT License - see the [LICENSE](../LICENSE) file for details. 
+Applications are licensed under the MIT License - see the [LICENSE](https://github.com/cumeadi/CAPP/blob/main/LICENSE/README.md) file for details.

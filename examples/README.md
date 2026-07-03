@@ -15,28 +15,28 @@ examples/
 
 The `quickstart/` directory contains basic examples to help you get started:
 
-- **Basic Agent**: Simple payment agent implementation
-- **Multi-Agent System**: Coordinated agent system
-- **Integration Examples**: Using various payment integrations
-- **Configuration**: Setting up the framework
+* **Basic Agent**: Simple payment agent implementation
+* **Multi-Agent System**: Coordinated agent system
+* **Integration Examples**: Using various payment integrations
+* **Configuration**: Setting up the framework
 
 ## 📚 CAPP Reference
 
 The `capp_reference/` directory contains a reference implementation of the CAPP (Canza Autonomous Payment Protocol) system:
 
-- **Complete Payment Flow**: End-to-end payment processing
-- **Agent Orchestration**: Multi-agent coordination
-- **API Integration**: RESTful API implementation
-- **Frontend Demo**: React-based user interface
+* **Complete Payment Flow**: End-to-end payment processing
+* **Agent Orchestration**: Multi-agent coordination
+* **API Integration**: RESTful API implementation
+* **Frontend Demo**: React-based user interface
 
 ## 🤖 Custom Agents
 
 The `custom_agents/` directory contains examples of building custom payment agents:
 
-- **Route Optimization**: Custom routing algorithms
-- **Cost Analysis**: Advanced cost optimization
-- **Compliance Agents**: Regulatory compliance automation
-- **Liquidity Management**: Dynamic liquidity optimization
+* **Route Optimization**: Custom routing algorithms
+* **Cost Analysis**: Advanced cost optimization
+* **Compliance Agents**: Regulatory compliance automation
+* **Liquidity Management**: Dynamic liquidity optimization
 
 ## 🎯 Getting Started
 
@@ -48,10 +48,11 @@ The `custom_agents/` directory contains examples of building custom payment agen
 ## 📖 Documentation
 
 Each example includes:
-- Detailed README with setup instructions
-- Code comments explaining key concepts
-- Configuration examples
-- Testing instructions
+
+* Detailed README with setup instructions
+* Code comments explaining key concepts
+* Configuration examples
+* Testing instructions
 
 ## 🤝 Contributing
 
@@ -64,4 +65,4 @@ We welcome contributions of new examples! Please:
 
 ## 📄 License
 
-Examples are licensed under the MIT License - see the [LICENSE](../LICENSE) file for details. 
+Examples are licensed under the MIT License - see the [LICENSE](https://github.com/cumeadi/CAPP/blob/main/LICENSE/README.md) file for details.

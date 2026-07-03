@@ -47,28 +47,32 @@ asyncio.run(main())
 ## ✨ Key Features
 
 ### 🎯 **91% Cost Reduction**
-- Proven multi-objective optimization algorithms
-- Intelligent route discovery and scoring
-- Learning and adaptation mechanisms
-- Real-time performance tracking
+
+* Proven multi-objective optimization algorithms
+* Intelligent route discovery and scoring
+* Learning and adaptation mechanisms
+* Real-time performance tracking
 
 ### 🤖 **Multi-Agent Orchestration**
-- Intelligent agent coordination
-- Proven consensus mechanisms
-- Configurable workflow execution
-- Performance analytics and monitoring
+
+* Intelligent agent coordination
+* Proven consensus mechanisms
+* Configurable workflow execution
+* Performance analytics and monitoring
 
 ### 🔒 **Comprehensive Compliance**
-- Multi-jurisdictional compliance checking
-- Real-time sanctions and PEP screening
-- Automated regulatory reporting
-- Risk-based scoring and assessment
+
+* Multi-jurisdictional compliance checking
+* Real-time sanctions and PEP screening
+* Automated regulatory reporting
+* Risk-based scoring and assessment
 
 ### 🌍 **Regional Optimization**
-- Africa-specific payment optimization
-- Cross-border payment expertise
-- Mobile money integration
-- Local regulatory compliance
+
+* Africa-specific payment optimization
+* Cross-border payment expertise
+* Mobile money integration
+* Local regulatory compliance
 
 ## 📦 Installation
 
@@ -233,37 +237,37 @@ for agent_id, agent_analytics in analytics['agent_analytics'].items():
 
 The framework supports multiple regions with specialized optimization:
 
-- **AFRICA**: Optimized for African payment corridors
-- **EAST_AFRICA**: Kenya, Uganda, Tanzania, Rwanda
-- **WEST_AFRICA**: Nigeria, Ghana, Senegal, Ivory Coast
-- **SOUTH_AFRICA**: South Africa, Namibia, Botswana
-- **NORTH_AFRICA**: Egypt, Morocco, Tunisia, Algeria
-- **GLOBAL**: Worldwide optimization
+* **AFRICA**: Optimized for African payment corridors
+* **EAST\_AFRICA**: Kenya, Uganda, Tanzania, Rwanda
+* **WEST\_AFRICA**: Nigeria, Ghana, Senegal, Ivory Coast
+* **SOUTH\_AFRICA**: South Africa, Namibia, Botswana
+* **NORTH\_AFRICA**: Egypt, Morocco, Tunisia, Algeria
+* **GLOBAL**: Worldwide optimization
 
 ## 🔒 Compliance Levels
 
-- **BASIC**: Minimal compliance requirements
-- **STANDARD**: Standard regulatory compliance
-- **ENHANCED**: Enhanced due diligence
-- **CRITICAL**: Critical compliance requirements
+* **BASIC**: Minimal compliance requirements
+* **STANDARD**: Standard regulatory compliance
+* **ENHANCED**: Enhanced due diligence
+* **CRITICAL**: Critical compliance requirements
 
 ## 🚀 Performance
 
 The framework is designed for high-performance processing:
 
-- **Concurrent Processing**: Up to 10 agents simultaneously
-- **Caching**: Redis-based caching for route optimization
-- **Learning**: Continuous improvement through machine learning
-- **Analytics**: Real-time performance monitoring
+* **Concurrent Processing**: Up to 10 agents simultaneously
+* **Caching**: Redis-based caching for route optimization
+* **Learning**: Continuous improvement through machine learning
+* **Analytics**: Real-time performance monitoring
 
 ## 📈 Results
 
 Based on the proven CAPP system, the framework delivers:
 
-- **91% Cost Reduction** through intelligent optimization
-- **95%+ Success Rate** with multi-agent consensus
-- **<1s Processing Time** for most transactions
-- **100% Compliance** with regulatory requirements
+* **91% Cost Reduction** through intelligent optimization
+* **95%+ Success Rate** with multi-agent consensus
+* **<1s Processing Time** for most transactions
+* **100% Compliance** with regulatory requirements
 
 ## 🔧 Configuration
 
@@ -327,19 +331,19 @@ The main framework class for orchestrating multi-agent workflows.
 
 #### Methods
 
-- `initialize(redis_config=None)`: Initialize the framework
-- `add_agent(agent)`: Add an agent to the orchestration
-- `workflow(func)`: Decorator for multi-agent workflows
-- `optimize_payment(transaction)`: Optimize a payment transaction
-- `check_compliance(transaction)`: Check transaction compliance
-- `get_framework_analytics()`: Get performance analytics
+* `initialize(redis_config=None)`: Initialize the framework
+* `add_agent(agent)`: Add an agent to the orchestration
+* `workflow(func)`: Decorator for multi-agent workflows
+* `optimize_payment(transaction)`: Optimize a payment transaction
+* `check_compliance(transaction)`: Check transaction compliance
+* `get_framework_analytics()`: Get performance analytics
 
 #### Properties
 
-- `config`: Framework configuration
-- `agents`: Registered agents
-- `total_transactions_processed`: Total transactions processed
-- `total_cost_savings`: Total cost savings achieved
+* `config`: Framework configuration
+* `agents`: Registered agents
+* `total_transactions_processed`: Total transactions processed
+* `total_cost_savings`: Total cost savings achieved
 
 ### WorkflowResult
 
@@ -347,40 +351,40 @@ Result from workflow execution with consensus.
 
 #### Properties
 
-- `workflow_id`: Unique workflow identifier
-- `success`: Whether the workflow succeeded
-- `consensus_reached`: Whether consensus was reached
-- `agent_results`: Results from individual agents
-- `cost_savings_percentage`: Cost savings achieved
-- `compliance_score`: Compliance score
-- `risk_score`: Risk assessment score
+* `workflow_id`: Unique workflow identifier
+* `success`: Whether the workflow succeeded
+* `consensus_reached`: Whether consensus was reached
+* `agent_results`: Results from individual agents
+* `cost_savings_percentage`: Cost savings achieved
+* `compliance_score`: Compliance score
+* `risk_score`: Risk assessment score
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+We welcome contributions! Please see our [Contributing Guide](https://github.com/cumeadi/CAPP/blob/main/sdk/CONTRIBUTING.md) for details.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/cumeadi/CAPP/blob/main/sdk/LICENSE/README.md) file for details.
 
 ## 🆘 Support
 
-- **Documentation**: [docs.canza.com](https://docs.canza.com)
-- **Issues**: [GitHub Issues](https://github.com/canza/canza-agents/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/canza/canza-agents/discussions)
-- **Email**: support@canza.com
+* **Documentation**: [docs.canza.com](https://docs.canza.com)
+* **Issues**: [GitHub Issues](https://github.com/canza/canza-agents/issues)
+* **Discussions**: [GitHub Discussions](https://github.com/canza/canza-agents/discussions)
+* **Email**: support@canza.com
 
 ## 🎯 Roadmap
 
-- [ ] Risk assessment agent templates
-- [ ] Liquidity management agent templates
-- [ ] Settlement coordination agent templates
-- [ ] Advanced machine learning capabilities
-- [ ] Additional regional optimizations
-- [ ] Enhanced compliance features
+* [ ] Risk assessment agent templates
+* [ ] Liquidity management agent templates
+* [ ] Settlement coordination agent templates
+* [ ] Advanced machine learning capabilities
+* [ ] Additional regional optimizations
+* [ ] Enhanced compliance features
 
----
+***
 
 **Built with ❤️ by the Canza Team**
 
-*Achieve 91% cost reduction with intelligent multi-agent orchestration.* 
+_Achieve 91% cost reduction with intelligent multi-agent orchestration._

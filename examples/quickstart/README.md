@@ -57,10 +57,10 @@ python integration_example.py
 
 ## 📁 Files
 
-- `basic_agent.py` - Simple payment agent
-- `multi_agent_system.py` - Multi-agent coordination
-- `integration_example.py` - Payment system integration
-- `configuration_example.py` - Framework configuration
+* `basic_agent.py` - Simple payment agent
+* `multi_agent_system.py` - Multi-agent coordination
+* `integration_example.py` - Payment system integration
+* `configuration_example.py` - Framework configuration
 
 ## 🎯 Next Steps
 
@@ -72,6 +72,6 @@ After running these examples:
 
 ## 📖 Documentation
 
-- [Agent Development Guide](../../docs/sdk/agent-development.md)
-- [Integration Guide](../../docs/sdk/integrations.md)
-- [API Reference](../../docs/sdk/api-reference.md) 
+* [Agent Development Guide](https://github.com/cumeadi/CAPP/blob/main/docs/sdk/agent-development.md)
+* [Integration Guide](https://github.com/cumeadi/CAPP/blob/main/docs/sdk/integrations.md)
+* [API Reference](https://github.com/cumeadi/CAPP/blob/main/docs/sdk/api-reference.md)
