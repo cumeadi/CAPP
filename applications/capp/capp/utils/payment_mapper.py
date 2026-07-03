@@ -12,6 +12,8 @@ from ..models.payments import (
     PaymentStatus,
     PaymentType,
     PaymentMethod,
+    TransactionDirection,
+    RailProvider,
 )
 from ..core.database import Payment as PaymentModel
 
@@ -75,6 +77,11 @@ def crossborder_payment_to_db(payment: CrossBorderPayment, user_id: Optional[UUI
         blockchain_tx_hash=payment.blockchain_tx_hash,
         agent_id=payment.agent_id,
         workflow_id=payment.workflow_id,
+
+        # Rail provider tracking
+        direction=payment.direction.value if payment.direction else None,
+        rail_provider=payment.rail_provider.value if payment.rail_provider else None,
+        provider_transaction_id=payment.provider_transaction_id,
 
         # Compliance and security
         compliance_status=payment.compliance_status,
@@ -171,6 +178,11 @@ def db_payment_to_crossborder(db_payment: PaymentModel) -> CrossBorderPayment:
         agent_id=db_payment.agent_id,
         workflow_id=db_payment.workflow_id,
         blockchain_tx_hash=db_payment.blockchain_tx_hash,
+
+        # Rail provider tracking
+        direction=TransactionDirection(db_payment.direction) if db_payment.direction else None,
+        rail_provider=RailProvider(db_payment.rail_provider) if db_payment.rail_provider else None,
+        provider_transaction_id=db_payment.provider_transaction_id,
 
         # Compliance and security
         compliance_status=db_payment.compliance_status,
