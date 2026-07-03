@@ -117,7 +117,9 @@ You're building a financial product and need African cross-border payments witho
 | Burkina Faso | XOF | — | ✓ |
 
 ### Blockchain settlement
-Aptos, Polygon, Base, Arbitrum, Starknet, Ethereum, Optimism
+Aptos, Polygon, Base, Arbitrum, Ethereum, Optimism, Starknet
+
+> Solana and Stellar integrations are in development (mock only). They are excluded from the production `Chain` enum and gated behind `ENABLE_MOCK_CHAINS=true`.
 
 ### Bridge providers
 Stargate, Across, Hop, CCTP (Circle), Hyperlane, LayerZero, Li.Fi

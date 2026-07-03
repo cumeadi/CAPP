@@ -73,19 +73,16 @@ class Settings(BaseSettings):
     )
     
     # Starknet Blockchain
-    STARKNET_NODE_URL: str = Field(
-        default="https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/REDACTED_ALCHEMY_KEY",
-        env="STARKNET_NODE_URL"
-    )
+    STARKNET_NODE_URL: Optional[str] = Field(default=None, env="STARKNET_NODE_URL")
     STARKNET_ACCOUNT_ADDRESS: Optional[str] = Field(default=None, env="STARKNET_ACCOUNT_ADDRESS")
     STARKNET_PRIVATE_KEY: Optional[str] = Field(default=None, env="STARKNET_PRIVATE_KEY")
     STARKNET_CHAIN_ID: str = Field(default="SN_SEPOLIA", env="STARKNET_CHAIN_ID")
-    
-    
+
+
     # EVM RPCs (Base & Arbitrum)
-    BASE_RPC_URL: str = Field(default="https://base-mainnet.g.alchemy.com/v2/REDACTED_ALCHEMY_KEY", env="BASE_RPC_URL")
+    BASE_RPC_URL: Optional[str] = Field(default=None, env="BASE_RPC_URL")
     BASE_CHAIN_ID: int = Field(default=8453, env="BASE_CHAIN_ID")  # Mainnet, override to 84532 for Sepolia testnet
-    ARBITRUM_RPC_URL: str = Field(default="https://arb-mainnet.g.alchemy.com/v2/REDACTED_ALCHEMY_KEY", env="ARBITRUM_RPC_URL")
+    ARBITRUM_RPC_URL: Optional[str] = Field(default=None, env="ARBITRUM_RPC_URL")
     ARBITRUM_CHAIN_ID: int = Field(default=42161, env="ARBITRUM_CHAIN_ID")  # Mainnet, override to 421614 for Sepolia testnet
     
     # Private Key for EVM transactions (Base/Arbitrum)
@@ -96,10 +93,7 @@ class Settings(BaseSettings):
     )
 
     # Polygon Blockchain
-    POLYGON_RPC_URL: str = Field(
-        default="https://polygon-mainnet.g.alchemy.com/v2/REDACTED_ALCHEMY_KEY",
-        env="POLYGON_RPC_URL"
-    )
+    POLYGON_RPC_URL: Optional[str] = Field(default=None, env="POLYGON_RPC_URL")
     POLYGON_PRIVATE_KEY: Optional[str] = Field(default=None, env="POLYGON_PRIVATE_KEY")
     CHAIN_ID_POLYGON: int = Field(default=137, env="CHAIN_ID_POLYGON")
     
@@ -155,6 +149,9 @@ class Settings(BaseSettings):
     # Fraud Detection
     FRAUD_DETECTION_ENABLED: bool = Field(default=True, env="FRAUD_DETECTION_ENABLED")
     FRAUD_THRESHOLD_SCORE: float = Field(default=0.8, env="FRAUD_THRESHOLD_SCORE")
+
+    # FX rate lock
+    RATE_LOCK_DURATION_MINUTES: int = Field(default=5, ge=1, le=1440, env="RATE_LOCK_DURATION_MINUTES")
 
     # Mock chain integrations
     # Solana and Stellar clients are simulated (hardcoded balances, fake tx hashes).
@@ -239,7 +236,18 @@ class Settings(BaseSettings):
     def validate_secret_key(cls, v: str, info: ValidationInfo) -> str:
         env = info.data.get("ENVIRONMENT", "development")
         if env == "production" and v == "CHANGE_ME_SECRET_KEY":
-            raise ValueError("❌ FATAL: Application is in PRODUCTION mode but using default CHANGE_ME_SECRET_KEY! Set SECRET_KEY env var.")
+            raise ValueError("FATAL: PRODUCTION mode with default CHANGE_ME_SECRET_KEY — set SECRET_KEY env var.")
+        return v
+
+    @field_validator("STARKNET_NODE_URL", "BASE_RPC_URL", "ARBITRUM_RPC_URL", "POLYGON_RPC_URL", mode="after")
+    @classmethod
+    def validate_rpc_urls(cls, v: Optional[str], info: ValidationInfo) -> Optional[str]:
+        env = info.data.get("ENVIRONMENT", "development")
+        if env == "production" and v is None:
+            raise ValueError(
+                f"FATAL: {info.field_name} is not set — this RPC endpoint is required in production. "
+                "Set the corresponding env var with a valid Alchemy (or other provider) URL."
+            )
         return v
 
 

@@ -23,10 +23,19 @@ class AgentCredentialBase(BaseModel):
     daily_limit_usd: Optional[float] = Field(None, description="Maximum allowed cumulative spend per day in USD")
     require_approval_above_usd: Optional[float] = Field(None, description="Transactions above this amount require out-of-band principal approval")
     
-    # Access policies 
+    # Access policies
     corridor_allowlist: Optional[List[str]] = Field(default_factory=list, description="List of allowed corridors e.g., 'US-KE'")
     chain_allowlist: Optional[List[Chain]] = Field(default_factory=list, description="List of allowed blockchains to interact with")
     allowed_tools: Optional[List[str]] = Field(default_factory=list, description="Specific MCP tools this agent can invoke")
+
+    # FX rate-lock window — how long a quoted rate is held before re-fetching.
+    # Default 5 minutes; institutional treasury accounts may set up to 24 hours (1440 min).
+    rate_lock_duration_minutes: int = Field(
+        default=5,
+        ge=1,
+        le=1440,
+        description="Minutes a locked FX rate is held before expiry (1–1440, default 5)",
+    )
 
 
 class AgentCredentialCreate(AgentCredentialBase):

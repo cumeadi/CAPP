@@ -8,9 +8,12 @@ from applications.capp.capp.core.database import get_db
 from applications.capp.capp.services.compliance import ComplianceService
 from applications.capp.capp.api.dependencies.auth import get_current_user
 from applications.capp.capp.models.user import User
+from applications.capp.capp.api.v1.endpoints.kyb import router as kyb_router
 
 router = APIRouter()
 compliance_service = ComplianceService()
+
+router.include_router(kyb_router)
 
 @router.get("/reports/download")
 async def download_compliance_report(
