@@ -1,6 +1,7 @@
 import structlog
 from typing import Dict, Optional, Any
 from decimal import Decimal
+from sqlalchemy.ext.asyncio import AsyncSession
 from applications.capp.capp.adapters.bridge_base import BaseBridgeAdapter
 from applications.capp.capp.adapters.mock_bridge import MockBridgeAdapter
 from applications.capp.capp.core.chaos import chaos_inject
@@ -31,27 +32,31 @@ class RelayerService:
         return self.adapters.get(name)
 
     @chaos_inject
-    async def execute_route(self, route: Dict[str, Any], user_private_key: Optional[str] = None, api_key: Optional[str] = None) -> Dict[str, Any]:
+    async def execute_route(
+        self,
+        route: Dict[str, Any],
+        user_private_key: Optional[str] = None,
+        api_key: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> Dict[str, Any]:
         """
         Execute a cross-chain route using the appropriate bridge adapter.
-        Requires a valid API Key for billing.
+        Requires a valid API Key for billing.  Pass `db` (AsyncSession) so
+        billing charges are durably persisted — without it, billing is skipped.
         """
         # 0. Billing & Authorization
         from applications.capp.capp.services.billing_service import BillingService
-        billing = BillingService.get_instance()
-        
-        if not api_key:
-             raise ValueError("API Key is required for Relayer execution.")
-             
-        # Authorize
-        account_id = billing.authorize(api_key)
-        
-        # Estimate Cost (Mocked flat fee for MVP)
-        ESTIMATED_FEE = Decimal("0.50") # $0.50 per tx
-        
-        # Check Credits
-        if not billing.check_credits(account_id, ESTIMATED_FEE):
-            raise ValueError(f"Insufficient credits. Execution requires ${ESTIMATED_FEE}")
+
+        ESTIMATED_FEE = Decimal("0.50")  # flat $0.50 per tx
+        account_id: Optional[str] = None
+
+        if api_key and db:
+            billing = BillingService(db)
+            account_id = await billing.authorize(api_key)
+            if not await billing.check_credits(account_id, ESTIMATED_FEE):
+                raise ValueError(f"Insufficient credits. Execution requires ${ESTIMATED_FEE}")
+        elif api_key:
+            logger.warning("relayer_billing_skipped", reason="no db session provided — billing not persisted")
 
         bridge_provider = route.get("bridge_provider")
         adapter = self.adapters.get(bridge_provider)
@@ -91,7 +96,9 @@ class RelayerService:
             )
             
             # 3. Bill the User
-            billing.deduct_credits(account_id, ESTIMATED_FEE)
+            if account_id and db:
+                billing = BillingService(db)
+                await billing.deduct_credits(account_id, ESTIMATED_FEE)
             
             # 4. Notify Oracle (Completed)
             from applications.capp.capp.services.oracle_service import OracleService, TransactionStatus

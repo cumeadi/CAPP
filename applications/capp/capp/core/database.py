@@ -150,6 +150,11 @@ class Payment(Base):
     mmo_transaction_id = Column(String(255), nullable=True)
     blockchain_tx_hash = Column(String(255), nullable=True, index=True)
 
+    # Rail provider tracking (HIFI Africa Rail, etc.)
+    direction = Column(String(10), nullable=True)  # payin, payout
+    rail_provider = Column(String(50), nullable=True, index=True)  # hifi_africa, mpesa, etc.
+    provider_transaction_id = Column(String(255), nullable=True)  # External rail reference
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -369,6 +374,101 @@ class ComplianceRecord(Base):
         Index("idx_compliance_user_type", "user_id", "check_type"),
         Index("idx_compliance_status", "status", "checked_at"),
         Index("idx_compliance_expires", "expires_at"),
+    )
+
+
+class DeveloperAccount(Base):
+    """Developer billing accounts — persisted replacement for the in-memory BillingService."""
+
+    __tablename__ = "developer_accounts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    account_id = Column(String(20), unique=True, nullable=False, index=True)  # acc_<hex8>
+    name = Column(String(255), nullable=False)
+    balance_usd = Column(Numeric(15, 2), default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    api_keys: Mapped[List["DeveloperApiKey"]] = relationship(
+        "DeveloperApiKey", back_populates="account", lazy="selectin"
+    )
+
+    __table_args__ = (
+        Index("idx_dev_accounts_active", "is_active", "created_at"),
+        CheckConstraint("balance_usd >= 0", name="check_non_negative_balance"),
+    )
+
+
+class DeveloperApiKey(Base):
+    """API keys issued to developer accounts."""
+
+    __tablename__ = "developer_api_keys"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    key = Column(String(64), unique=True, nullable=False, index=True)  # pk_live_<hex16>
+    account_id = Column(String(20), ForeignKey("developer_accounts.account_id"), nullable=False, index=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+
+    account: Mapped["DeveloperAccount"] = relationship("DeveloperAccount", back_populates="api_keys")
+
+    __table_args__ = (
+        Index("idx_dev_api_keys_account_active", "account_id", "is_active"),
+    )
+
+
+class HifiKYCSubmission(Base):
+    """HIFI Africa Rail KYC/KYB submission records."""
+
+    __tablename__ = "hifi_kyc_submissions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    submission_type = Column(String(10), nullable=False)  # individual, business
+
+    # Status
+    status = Column(String(50), default="pending", nullable=False)  # pending, approved, rejected
+    hifi_kyc_reference_id = Column(String(255), nullable=True)
+
+    # Individual KYC fields
+    first_name = Column(String(100), nullable=True)
+    last_name = Column(String(100), nullable=True)
+    email = Column(String(255), nullable=True)
+    phone = Column(String(20), nullable=True)
+    date_of_birth = Column(DateTime, nullable=True)
+    id_type = Column(String(50), nullable=True)  # DRIVERS, ID_CARD, PASSPORT, RESIDENCE_PERMIT
+    id_number = Column(String(100), nullable=True)
+    additional_id_type = Column(String(50), nullable=True)  # Nigeria-specific
+    additional_id_number = Column(String(100), nullable=True)  # Nigeria-specific
+
+    # Address
+    address_line1 = Column(String(255), nullable=True)
+    address_line2 = Column(String(255), nullable=True)
+    city = Column(String(100), nullable=True)
+    state_province_region = Column(String(100), nullable=True)
+    postal_code = Column(String(20), nullable=True)
+    country = Column(String(3), nullable=True)
+
+    # Business KYB fields
+    business_name = Column(String(255), nullable=True)
+    tax_identification_number = Column(String(100), nullable=True)
+
+    # Timestamps
+    submitted_at = Column(DateTime, nullable=True)
+    verified_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        Index("idx_hifi_kyc_user_type", "user_id", "submission_type"),
+        Index("idx_hifi_kyc_status", "status"),
     )
 
 

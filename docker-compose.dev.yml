@@ -85,7 +85,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        APP_DIR: apps/api
+        APP_DIR: applications/capp
     container_name: capp-dev-api
     restart: unless-stopped
     ports:

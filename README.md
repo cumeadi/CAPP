@@ -35,6 +35,22 @@ Our Nigeria → Kenya payment demonstration shows:
 
 ## 🏗️ Architecture
 
+### Application topology (read this first)
+
+CAPP has **one production API** and a **separate demo stack**. Don't confuse them:
+
+| | Production API (App B) | Demo API (App A) |
+|---|---|---|
+| Path | `applications/capp/capp/` | `apps/api/` |
+| Entry | `applications.capp.capp.main:app` | `apps.api.app.main:app` |
+| Routes | `/api/v1/*` | bare (`/wallet/send`, …) |
+| DB | async SQLAlchemy + Postgres + Alembic | sync SQLite (throwaway) |
+| Tests | ≥60% coverage (`pytest`) | none |
+| Deployed | **yes** (root `Dockerfile`, `app.yaml`) | **no** |
+
+- **App B is the product.** All deployment (`Dockerfile`, `docker-compose*.yml`, `app.yaml`, CI) targets it. New capabilities are built here, under `/api/v1`.
+- **App A is a demo** that showcases the SDK/API through the `apps/web` and `apps/wallet` frontends. It reuses App B's agents/services but is not deployed. See [`apps/api/README.md`](apps/api/README.md). Launch it with `./start-capp.sh`.
+
 ### Backend (FastAPI + Python)
 - **Agent-Based Architecture**: Autonomous agents coordinate payment flows and cross-chain operations.
 - **Intelligent Routing Engine**: Optimizes payment paths based on real-time gas/fees from Aptos, Polygon, and Starknet.
